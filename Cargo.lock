@@ -1665,6 +1665,7 @@ dependencies = [
  "dotenvy",
  "hmac",
  "jsonwebtoken",
+ "regex",
  "reqwest",
  "sea-orm",
  "sea-orm-migration",

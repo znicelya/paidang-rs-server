@@ -61,6 +61,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/", get(health))
         .merge(domain::auth::router::routes())
         .merge(domain::user::router::routes())
+        .merge(domain::bookings::routes())
+        .merge(domain::booking_logs::routes())
+        .merge(domain::time_slot_templates::routes())
+        .merge(domain::date_slots::routes())
+        .merge(domain::date_settings::routes())
         .layer(axum::Extension(middleware::auth::JwtSecret(jwt_secret)))
         .with_state(state);
 

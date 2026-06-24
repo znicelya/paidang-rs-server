@@ -39,3 +39,4 @@ validator = { version = "0.20", features = ["derive"] }
 hmac = "0.12"
 sha1 = "0.10"
 base64 = "0.22"
+regex = "1"
