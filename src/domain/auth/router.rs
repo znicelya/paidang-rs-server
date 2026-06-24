@@ -1,11 +1,9 @@
 //! Auth router — `POST /auth/login`.
 
-use axum::routing::post;
-use axum::Router;
+use utoipa_axum::{routes, router::OpenApiRouter};
 
-use super::login_handler::login_handler;
 use crate::app_state::AppState;
 
-pub fn routes() -> Router<AppState> {
-    Router::new().route("/auth/login", post(login_handler))
+pub fn routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new().routes(routes!(super::login_handler::login_handler))
 }

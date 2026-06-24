@@ -9,13 +9,24 @@ use crate::error::AppError;
 use crate::external::wechat::ReqwestWechat;
 use crate::response::ApiResponse;
 
-use super::dto::LoginRequest;
+use super::dto::{LoginData, LoginRequest};
 use super::service;
 
 /// POST /auth/login
 ///
 /// Accepts `{ code, nickname?, avatar_url?, phone?, phone_code? }`.
 /// Returns `{ user_id, openid, role, phone, is_new, token }`.
+#[utoipa::path(
+    post,
+    path = "/auth/login",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, body = ApiResponse<LoginData>),
+        (status = 400, description = "Input validation error"),
+        (status = 500, description = "External/Internal error"),
+    ),
+    tag = "auth",
+)]
 pub async fn login_handler(
     State(state): State<AppState>,
     Json(body): Json<LoginRequest>,
