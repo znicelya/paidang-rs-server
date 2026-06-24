@@ -1,6 +1,7 @@
 //! Bookings domain DTOs.
 
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use validator::{Validate, ValidationError};
 
 /// Validate YYYY-MM-DD date format.
@@ -36,7 +37,7 @@ fn valid_time_optional(s: &str) -> Result<(), ValidationError> {
 }
 
 /// POST /bookings request body (mirrors TS `bookingCreateSchema`).
-#[derive(Debug, Clone, Deserialize, Validate)]
+#[derive(Debug, Clone, Deserialize, Validate, ToSchema)]
 pub struct CreateBookingRequest {
     #[validate(range(min = 1))]
     pub photographer_id: i32,
@@ -62,7 +63,7 @@ pub struct CreateBookingRequest {
 }
 
 /// PUT /bookings/:id request body.
-#[derive(Debug, Default, Deserialize, Validate)]
+#[derive(Debug, Default, Deserialize, Validate, ToSchema)]
 pub struct UpdateBookingRequest {
     pub photographer_id: Option<i32>,
     pub slot_instance_id: Option<i32>,
@@ -85,7 +86,7 @@ pub struct UpdateBookingRequest {
 }
 
 /// Booking list query params.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct BookingListQuery {
     pub page: Option<u64>,
     pub page_size: Option<u64>,
@@ -105,14 +106,14 @@ pub struct TodayQuery {
 }
 
 /// Created booking response.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct CreateBookingData {
     pub booking_id: i32,
     pub booking_no: String,
 }
 
 /// Stats response.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct StatsData {
     pub pending: u64,
     pub today: u64,

@@ -4,12 +4,15 @@
 use std::sync::Arc;
 
 use paidang_rs_server::app_state::AppState;
+use paidang_rs_server::openapi::ApiDoc;
 use paidang_rs_server::{config, domain, middleware, migration};
 use axum::routing::get;
 use axum::Router;
 use migration::MigratorTrait;
 use sea_orm::{ConnectOptions, Database};
 use tracing_subscriber::EnvFilter;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -52,6 +55,8 @@ async fn main() -> anyhow::Result<()> {
 
     let mut app = Router::new()
         .route("/", get(health))
+        .route("/api-docs/openapi.json", get(serve_openapi))
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .merge(domain::auth::router::routes())
         .merge(domain::user::router::routes())
         .merge(domain::bookings::routes())
@@ -86,4 +91,15 @@ async fn main() -> anyhow::Result<()> {
 
 async fn health() -> &'static str {
     "ok"
+}
+
+#[utoipa::path(
+    get,
+    path = "/api-docs/openapi.json",
+    responses(
+        (status = 200, description = "OpenAPI JSON")
+    )
+)]
+async fn serve_openapi() -> axum::Json<utoipa::openapi::OpenApi> {
+    axum::Json(ApiDoc::openapi())
 }

@@ -1,5 +1,4 @@
-// Scaffolding: foundation types are built ahead of their first consumers.
-// TODO(M7): remove this `allow` and enforce `cargo clippy -- -D warnings`.
+// paidang-rs-server — lib.rs exports for binary and integration tests.
 #![allow(dead_code)]
 
 pub mod app_state;
@@ -10,4 +9,5 @@ pub mod error;
 pub mod external;
 pub mod migration;
 pub mod middleware;
+pub mod openapi;
 pub mod response;

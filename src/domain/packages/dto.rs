@@ -1,10 +1,11 @@
 //! Packages domain DTOs.
 
 use serde::Deserialize;
+use utoipa::ToSchema;
 use validator::Validate;
 
 /// POST /packages
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct CreatePackageReq {
     #[validate(length(min = 1))]
     pub name: String,
@@ -27,7 +28,7 @@ pub struct CreatePackageReq {
 }
 
 /// PUT /packages/:id
-#[derive(Debug, Default, Deserialize, Validate)]
+#[derive(Debug, Default, Deserialize, Validate, ToSchema)]
 pub struct UpdatePackageReq {
     pub name: Option<String>,
     pub subtitle: Option<String>,
@@ -57,7 +58,7 @@ pub struct ListQuery {
 
 // ── Package Items ──────────────────────────────────
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct CreateItemReq {
     #[validate(range(min = 1))]
     pub package_id: i32,
@@ -85,7 +86,7 @@ pub struct UpdateItemReq {
 
 // ── Package Gallery ───────────────────────────────
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct CreateGalleryReq {
     #[validate(range(min = 1))]
     pub package_id: i32,

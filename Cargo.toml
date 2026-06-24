@@ -40,6 +40,10 @@ hmac = "0.12"
 sha1 = "0.10"
 base64 = "0.22"
 regex = "1"
+# OpenAPI docs
+utoipa = { version = "5", features = ["axum_extras", "chrono"] }
+utoipa-axum = "0.2"
+utoipa-swagger-ui = { version = "9", features = ["axum", "reqwest"] }
 
 [dev-dependencies]
 testcontainers = "0.24"

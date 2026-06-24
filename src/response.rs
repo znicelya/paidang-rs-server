@@ -1,9 +1,10 @@
 use serde::Serialize;
+use utoipa::ToSchema;
 
 /// Success envelope: `{ "success": true, "data": <T> }`.
 ///
 /// Mirrors `paidang-worker-server/src/types.ts` `apiResponse`.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct ApiResponse<T: Serialize> {
     pub success: bool,
     pub data: T,
@@ -22,7 +23,7 @@ impl<T: Serialize> ApiResponse<T> {
 ///
 /// Serializes to `{ "list": [...], "total": N, "page": N, "pageSize": N }`,
 /// matching the existing mini-program contract.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct PaginatedData<T: Serialize> {
     pub list: Vec<T>,
     pub total: u64,

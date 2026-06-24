@@ -1,6 +1,7 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use serde::Serialize;
 use serde_json::json;
 
 /// Error codes — compatible with the existing TS backend where applicable,
@@ -10,6 +11,19 @@ pub const CODE_VALIDATION: u16 = 7001;
 pub const CODE_NOT_FOUND: u16 = 7002;
 pub const CODE_UNAUTHORIZED: u16 = 7003;
 pub const CODE_FORBIDDEN: u16 = 7004;
+
+/// Serializable error body for OpenAPI schema.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct ErrorBody {
+    pub success: bool,
+    pub errors: Vec<ErrorItem>,
+}
+
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct ErrorItem {
+    pub code: u16,
+    pub message: String,
+}
 
 /// Application error type. Every variant renders into the existing failure
 /// envelope: `{ "success": false, "errors": [{ "code", "message" }] }`.
