@@ -4,8 +4,12 @@
 
 mod app_state;
 mod config;
+mod domain;
+mod entity;
 mod error;
+mod external;
 mod migration;
+mod middleware;
 mod response;
 
 use std::sync::Arc;
@@ -46,7 +50,19 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState::new(settings.clone(), db);
 
-    let app = Router::new().route("/", get(health)).with_state(state);
+    // ── JWT secret — injected into request extensions for the AuthUser extractor
+    let jwt_secret = settings
+        .jwt_secret
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("JWT_SECRET is not set"))?
+        .clone();
+
+    let app = Router::new()
+        .route("/", get(health))
+        .merge(domain::auth::router::routes())
+        .merge(domain::user::router::routes())
+        .layer(axum::Extension(middleware::auth::JwtSecret(jwt_secret)))
+        .with_state(state);
 
     let addr = format!("{}:{}", settings.server.host, settings.server.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;

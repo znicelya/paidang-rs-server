@@ -1,0 +1,40 @@
+//! DTOs for the user domain.
+
+use serde::{Deserialize, Serialize};
+use validator::Validate;
+
+/// GET /user/profile response data.
+#[derive(Debug, Serialize)]
+pub struct ProfileData {
+    pub user_id: i32,
+    pub openid: String,
+    pub role: i8,
+    pub phone: Option<String>,
+    pub status: i8,
+    pub nickname: Option<String>,
+    pub avatar_url: Option<String>,
+    pub background_image: Option<String>,
+    pub gender: Option<i8>,
+    pub country: Option<String>,
+    pub province: Option<String>,
+    pub city: Option<String>,
+    pub birthday: Option<String>,
+    pub bio: Option<String>,
+    pub create_time: Option<String>,
+}
+
+/// PUT /user/profile request body — all fields optional.
+#[derive(Debug, Deserialize, Validate)]
+pub struct UpdateProfileRequest {
+    pub phone: Option<String>,
+    pub nickname: Option<String>,
+    pub avatar_url: Option<String>,
+    pub background_image: Option<String>,
+    #[validate(range(min = 0, max = 2))]
+    pub gender: Option<i8>,
+    pub birthday: Option<String>,
+    pub province: Option<String>,
+    pub city: Option<String>,
+    #[validate(length(max = 200))]
+    pub bio: Option<String>,
+}
