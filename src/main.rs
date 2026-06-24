@@ -50,6 +50,9 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState::new(settings.clone(), db);
 
+    // ── Log ring buffer for dev mode /logs endpoint
+    let log_buffer = state.log_buffer.clone();
+
     // ── JWT secret — injected into request extensions for the AuthUser extractor
     let jwt_secret = settings
         .jwt_secret
@@ -57,7 +60,7 @@ async fn main() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("JWT_SECRET is not set"))?
         .clone();
 
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/", get(health))
         .merge(domain::auth::router::routes())
         .merge(domain::user::router::routes())
@@ -70,7 +73,18 @@ async fn main() -> anyhow::Result<()> {
         .merge(domain::gallery_groups::routes())
         .merge(domain::gallery::routes())
         .merge(domain::files::routes())
-        .layer(axum::Extension(middleware::auth::JwtSecret(jwt_secret)))
+        .merge(domain::logs::routes())
+        .layer(axum::Extension(middleware::auth::JwtSecret(jwt_secret)));
+
+    // Inject log buffer into request extensions for the request_log middleware
+    if let Some(buf) = log_buffer {
+        app = app.layer(axum::Extension(buf));
+    }
+
+    let app = app
+        .layer(axum::middleware::from_fn(
+            middleware::request_log::request_logger,
+        ))
         .with_state(state);
 
     let addr = format!("{}:{}", settings.server.host, settings.server.port);

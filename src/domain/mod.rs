@@ -6,6 +6,7 @@ pub mod date_slots;
 pub mod files;
 pub mod gallery;
 pub mod gallery_groups;
+pub mod logs;
 pub mod packages;
 pub mod time_slot_templates;
 pub mod user;

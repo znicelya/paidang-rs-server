@@ -1,0 +1,45 @@
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: paidang
+      MYSQL_USER: ${MYSQL_USER:-paidang}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-paidang}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    ports:
+      - "8787:8787"
+    environment:
+      RUN_ENV: production
+      DATABASE_URL: mysql://${MYSQL_USER:-paidang}:${MYSQL_PASSWORD:-paidang}@db:3306/paidang
+      JWT_SECRET: ${JWT_SECRET}
+      WX_APPID: ${WX_APPID}
+      WX_SECRET: ${WX_SECRET}
+      QINIU_ACCESS_KEY: ${QINIU_ACCESS_KEY}
+      QINIU_SECRET_KEY: ${QINIU_SECRET_KEY}
+      COS_SECRET_ID: ${COS_SECRET_ID}
+      COS_SECRET_KEY: ${COS_SECRET_KEY}
+      COS_BUCKET: ${COS_BUCKET}
+      COS_REGION: ${COS_REGION}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
