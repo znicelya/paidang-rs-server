@@ -66,6 +66,9 @@ async fn main() -> anyhow::Result<()> {
         .merge(domain::time_slot_templates::routes())
         .merge(domain::date_slots::routes())
         .merge(domain::date_settings::routes())
+        .merge(domain::packages::routes())
+        .merge(domain::gallery_groups::routes())
+        .merge(domain::gallery::routes())
         .layer(axum::Extension(middleware::auth::JwtSecret(jwt_secret)))
         .with_state(state);
 
