@@ -4,10 +4,9 @@
 
 mod common;
 
-use sea_orm::ActiveModelTrait;
-use sea_orm::Set;
+use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 
-use common::{expired_jwt, setup, test_jwt};
+use common::setup;
 use paidang_rs_server::entity::user;
 use paidang_rs_server::middleware::auth;
 

@@ -27,7 +27,7 @@ pub struct CreatePackageReq {
 }
 
 /// PUT /packages/:id
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Default, Deserialize, Validate)]
 pub struct UpdatePackageReq {
     pub name: Option<String>,
     pub subtitle: Option<String>,

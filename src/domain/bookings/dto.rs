@@ -36,7 +36,7 @@ fn valid_time_optional(s: &str) -> Result<(), ValidationError> {
 }
 
 /// POST /bookings request body (mirrors TS `bookingCreateSchema`).
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Clone, Deserialize, Validate)]
 pub struct CreateBookingRequest {
     #[validate(range(min = 1))]
     pub photographer_id: i32,
@@ -62,7 +62,7 @@ pub struct CreateBookingRequest {
 }
 
 /// PUT /bookings/:id request body.
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Default, Deserialize, Validate)]
 pub struct UpdateBookingRequest {
     pub photographer_id: Option<i32>,
     pub slot_instance_id: Option<i32>,

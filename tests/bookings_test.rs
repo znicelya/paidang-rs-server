@@ -4,11 +4,10 @@ mod common;
 
 use common::setup;
 use paidang_rs_server::domain::bookings::dto::{
-    BookingListQuery, CreateBookingRequest, StatsQuery, UpdateBookingRequest,
+    BookingListQuery, CreateBookingRequest, UpdateBookingRequest,
 };
 use paidang_rs_server::domain::bookings::service;
-use paidang_rs_server::entity::booking;
-use sea_orm::EntityTrait;
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
 /// Insert a minimal user so FK-like references pass service-layer checks.
 async fn seed_photographer(ctx: &common::TestContext) -> i32 {

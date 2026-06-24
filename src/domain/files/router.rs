@@ -34,7 +34,7 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/files", post(upload))
         .route("/files", get(list))
-        .route("/files/*path", get(download))
+        .route("/files/{*path}", get(download))
         .route("/files", delete(delete_file))
 }
 
