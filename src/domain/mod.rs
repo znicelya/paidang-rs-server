@@ -3,6 +3,7 @@ pub mod booking_logs;
 pub mod bookings;
 pub mod date_settings;
 pub mod date_slots;
+pub mod files;
 pub mod gallery;
 pub mod gallery_groups;
 pub mod packages;
