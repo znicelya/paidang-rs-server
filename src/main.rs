@@ -1,20 +1,10 @@
-// Scaffolding: foundation types are built ahead of their first consumers.
-// TODO(M7): remove this `allow` and enforce `cargo clippy -- -D warnings`.
-#![allow(dead_code)]
-
-mod app_state;
-mod config;
-mod domain;
-mod entity;
-mod error;
-mod external;
-mod migration;
-mod middleware;
-mod response;
+//! paidang-rs-server binary entrypoint.
+//! Module declarations are in `lib.rs` so that integration tests can import the crate.
 
 use std::sync::Arc;
 
-use app_state::AppState;
+use paidang_rs_server::app_state::AppState;
+use paidang_rs_server::{config, domain, middleware, migration};
 use axum::routing::get;
 use axum::Router;
 use migration::MigratorTrait;
