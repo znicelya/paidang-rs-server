@@ -5,6 +5,7 @@
 mod app_state;
 mod config;
 mod error;
+mod migration;
 mod response;
 
 use std::sync::Arc;
@@ -12,6 +13,8 @@ use std::sync::Arc;
 use app_state::AppState;
 use axum::routing::get;
 use axum::Router;
+use migration::MigratorTrait;
+use sea_orm::{ConnectOptions, Database};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -27,7 +30,21 @@ async fn main() -> anyhow::Result<()> {
     let settings = Arc::new(config::Settings::load()?);
     tracing::info!(env = %settings.env, "starting paidang-rs-server");
 
-    let state = AppState::new(settings.clone());
+    // ── Database ──────────────────────────────────────────────
+    let db_url = settings
+        .database_url
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("DATABASE_URL is not set"))?;
+    let mut opt = ConnectOptions::new(db_url.clone());
+    opt.max_connections(settings.database.pool_size);
+    let db = Database::connect(opt).await?;
+    tracing::info!("database connected");
+
+    // Apply migrations (UTC+8 MySQL, no FK, no triggers).
+    migration::Migrator::up(&db, None).await?;
+    tracing::info!("migrations applied");
+
+    let state = AppState::new(settings.clone(), db);
 
     let app = Router::new().route("/", get(health)).with_state(state);
 
