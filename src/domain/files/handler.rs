@@ -9,6 +9,7 @@ use axum::Json;
 use crate::app_state::AppState;
 use crate::error::AppError;
 use crate::middleware::auth::AuthUser;
+use crate::util::require_admin;
 use crate::response::ApiResponse;
 
 use super::dto::{DeleteQuery, ListQuery};
@@ -151,9 +152,7 @@ pub async fn delete_file(
     auth: AuthUser,
     Query(q): Query<DeleteQuery>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
-    if auth.role < 2 {
-        return Err(AppError::Forbidden("需要管理员权限".into()));
-    }
+    require_admin(&auth)?;
     service::delete(&state, &q.key).await?;
     Ok(Json(ApiResponse::ok(())))
 }

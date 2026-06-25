@@ -7,19 +7,11 @@ use validator::Validate;
 use crate::app_state::AppState;
 use crate::error::AppError;
 use crate::middleware::auth::AuthUser;
+use crate::util::require_owner;
 use crate::response::{ApiResponse, PaginatedData};
 
 use super::dto::*;
 use super::service;
-
-/// Require that the authenticated user is the owner of the resource or an admin.
-fn require_owner(auth: &AuthUser, photographer_id: i32) -> Result<(), AppError> {
-    if auth.role >= 2 || auth.user_id == photographer_id {
-        Ok(())
-    } else {
-        Err(AppError::Forbidden("无权操作此资源".into()))
-    }
-}
 
 /// GET /bookings — list bookings with pagination and filters.
 #[utoipa::path(

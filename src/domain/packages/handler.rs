@@ -7,18 +7,11 @@ use validator::Validate;
 use crate::app_state::AppState;
 use crate::error::AppError;
 use crate::middleware::auth::AuthUser;
+use crate::util::require_admin;
 use crate::response::{ApiResponse, PaginatedData};
 
 use super::dto::*;
 use super::service;
-
-fn require_admin(auth: &AuthUser) -> Result<(), AppError> {
-    if auth.role >= 2 {
-        Ok(())
-    } else {
-        Err(AppError::Forbidden("需要管理员权限".into()))
-    }
-}
 
 // ── Package handlers ────────────────────────────────────
 
