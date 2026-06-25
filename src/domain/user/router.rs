@@ -1,13 +1,14 @@
 //! User router — profile read/update + avatar upload (JWT-protected).
 
-use axum::routing::{get, post};
-use axum::Router;
+use utoipa_axum::routes;
+use utoipa_axum::router::OpenApiRouter;
 
-use super::handlers::{get_profile, update_profile, upload_avatar};
 use crate::app_state::AppState;
 
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/user/profile", get(get_profile).put(update_profile))
-        .route("/user/avatar", post(upload_avatar))
+pub fn routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new().routes(routes!(
+        crate::domain::user::handlers::get_profile,
+        crate::domain::user::handlers::update_profile,
+        crate::domain::user::handlers::upload_avatar
+    ))
 }

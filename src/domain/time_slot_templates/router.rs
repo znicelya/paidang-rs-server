@@ -1,13 +1,15 @@
 //! Time slot templates — CRUD, photographer-owned (role >= 1).
 
 use axum::extract::{Path, Query, State};
-use axum::routing::get;
-use axum::{Json, Router};
+use axum::Json;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
     QuerySelect, Set,
 };
 use serde::Deserialize;
+use utoipa::ToSchema;
+use utoipa_axum::routes;
+use utoipa_axum::router::OpenApiRouter;
 use validator::{Validate, ValidationError};
 
 use crate::app_state::AppState;
@@ -32,7 +34,7 @@ fn require_owner(auth: &AuthUser, photographer_id: i32) -> Result<(), AppError> 
     }
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct CreateReq {
     #[validate(length(min = 1))]
     pub slot_name: String,
@@ -45,7 +47,7 @@ pub struct CreateReq {
     pub status: Option<i8>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct UpdateReq {
     pub slot_name: Option<String>,
     pub start_time: Option<String>,
@@ -55,21 +57,29 @@ pub struct UpdateReq {
     pub status: Option<i8>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct ListQuery {
     pub page: Option<u64>,
     pub page_size: Option<u64>,
 }
 
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/time-slot-templates", get(list).post(create))
-        .route(
-            "/time-slot-templates/{id}",
-            get(read).put(update).delete(delete_one),
-        )
+pub fn routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(list, create))
+        .routes(routes!(read, update, delete_one))
 }
 
+/// GET /time-slot-templates — list templates.
+#[utoipa::path(
+    get,
+    path = "/time-slot-templates",
+    params(ListQuery),
+    responses(
+        (status = 200, body = ApiResponse<PaginatedData<serde_json::Value>>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    tag = "time-slot-templates",
+)]
 async fn list(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -100,6 +110,19 @@ async fn list(
     ))))
 }
 
+/// GET /time-slot-templates/{id} — read a single template.
+#[utoipa::path(
+    get,
+    path = "/time-slot-templates/{id}",
+    params(("id" = i32, Path, description = "Template ID")),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "time-slot-templates",
+)]
 async fn read(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -114,6 +137,18 @@ async fn read(
     Ok(Json(ApiResponse::ok(serde_json::to_value(r).unwrap())))
 }
 
+/// POST /time-slot-templates — create a new template.
+#[utoipa::path(
+    post,
+    path = "/time-slot-templates",
+    request_body = CreateReq,
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 400, description = "Input validation error"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    tag = "time-slot-templates",
+)]
 async fn create(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -137,6 +172,20 @@ async fn create(
     Ok(Json(ApiResponse::ok(serde_json::to_value(m).unwrap())))
 }
 
+/// PUT /time-slot-templates/{id} — update a template.
+#[utoipa::path(
+    put,
+    path = "/time-slot-templates/{id}",
+    params(("id" = i32, Path, description = "Template ID")),
+    request_body = UpdateReq,
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "time-slot-templates",
+)]
 async fn update(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -175,6 +224,19 @@ async fn update(
     Ok(Json(ApiResponse::ok(serde_json::to_value(r).unwrap())))
 }
 
+/// DELETE /time-slot-templates/{id} — delete a template.
+#[utoipa::path(
+    delete,
+    path = "/time-slot-templates/{id}",
+    params(("id" = i32, Path, description = "Template ID")),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "time-slot-templates",
+)]
 async fn delete_one(
     State(state): State<AppState>,
     auth: AuthUser,

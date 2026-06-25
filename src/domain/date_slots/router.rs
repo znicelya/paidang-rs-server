@@ -1,13 +1,15 @@
 //! Date slots — CRUD + day + monthly. JWT-protected, photographer-owner scoped.
 
 use axum::extract::{Path, Query, State};
-use axum::routing::get;
-use axum::{Json, Router};
+use axum::Json;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
     QuerySelect, Set,
 };
 use serde::Deserialize;
+use utoipa::ToSchema;
+use utoipa_axum::routes;
+use utoipa_axum::router::OpenApiRouter;
 use validator::{Validate, ValidationError};
 
 use crate::app_state::AppState;
@@ -36,7 +38,7 @@ fn require_owner(auth: &AuthUser, photographer_id: i32) -> Result<(), AppError> 
     }
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct CreateReq {
     #[validate(range(min = 1))]
     pub photographer_id: i32,
@@ -53,7 +55,7 @@ pub struct CreateReq {
     pub remark: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct UpdateReq {
     pub slot_name: Option<String>,
     pub start_time: Option<String>,
@@ -64,7 +66,7 @@ pub struct UpdateReq {
     pub remark: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct ListQuery {
     pub page: Option<u64>,
     pub page_size: Option<u64>,
@@ -72,26 +74,37 @@ pub struct ListQuery {
     pub slot_date: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct DayQuery {
     pub photographer_id: i32,
     pub slot_date: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct MonthlyQuery {
     pub photographer_id: i32,
     pub year_month: String,
 }
 
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/date-slots", get(list).post(create))
-        .route("/date-slots/day", get(day))
-        .route("/date-slots/monthly", get(monthly))
-        .route("/date-slots/{id}", get(read).put(update).delete(delete_one))
+pub fn routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(list, create))
+        .routes(routes!(read, update, delete_one))
+        .routes(routes!(day))
+        .routes(routes!(monthly))
 }
 
+/// GET /date-slots — list date slots.
+#[utoipa::path(
+    get,
+    path = "/date-slots",
+    params(ListQuery),
+    responses(
+        (status = 200, body = ApiResponse<PaginatedData<serde_json::Value>>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    tag = "date-slots",
+)]
 async fn list(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -135,6 +148,19 @@ async fn list(
     ))))
 }
 
+/// GET /date-slots/{id} — read a single date slot.
+#[utoipa::path(
+    get,
+    path = "/date-slots/{id}",
+    params(("id" = i32, Path, description = "Date slot ID")),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "date-slots",
+)]
 async fn read(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -149,6 +175,19 @@ async fn read(
     Ok(Json(ApiResponse::ok(serde_json::to_value(r).unwrap())))
 }
 
+/// POST /date-slots — create a new date slot.
+#[utoipa::path(
+    post,
+    path = "/date-slots",
+    request_body = CreateReq,
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 400, description = "Input validation error"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    tag = "date-slots",
+)]
 async fn create(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -156,7 +195,6 @@ async fn create(
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
     body.validate()
         .map_err(|e| AppError::InputValidation(e.to_string()))?;
-    // Non-admin can only create for themselves
     require_owner(&auth, body.photographer_id)?;
     let m = date_slot::ActiveModel {
         photographer_id: Set(body.photographer_id),
@@ -177,6 +215,20 @@ async fn create(
     Ok(Json(ApiResponse::ok(serde_json::to_value(m).unwrap())))
 }
 
+/// PUT /date-slots/{id} — update a date slot.
+#[utoipa::path(
+    put,
+    path = "/date-slots/{id}",
+    params(("id" = i32, Path, description = "Date slot ID")),
+    request_body = UpdateReq,
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "date-slots",
+)]
 async fn update(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -218,6 +270,19 @@ async fn update(
     Ok(Json(ApiResponse::ok(serde_json::to_value(r).unwrap())))
 }
 
+/// DELETE /date-slots/{id} — delete a date slot.
+#[utoipa::path(
+    delete,
+    path = "/date-slots/{id}",
+    params(("id" = i32, Path, description = "Date slot ID")),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "date-slots",
+)]
 async fn delete_one(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -236,6 +301,18 @@ async fn delete_one(
     Ok(Json(ApiResponse::ok(())))
 }
 
+/// GET /date-slots/day — slots for a specific day.
+#[utoipa::path(
+    get,
+    path = "/date-slots/day",
+    params(DayQuery),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    tag = "date-slots",
+)]
 async fn day(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -256,6 +333,18 @@ async fn day(
     Ok(Json(ApiResponse::ok(serde_json::json!({"list":list}))))
 }
 
+/// GET /date-slots/monthly — slots for a month.
+#[utoipa::path(
+    get,
+    path = "/date-slots/monthly",
+    params(MonthlyQuery),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    tag = "date-slots",
+)]
 async fn monthly(
     State(state): State<AppState>,
     auth: AuthUser,

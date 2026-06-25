@@ -11,9 +11,11 @@ use std::sync::Arc;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::get;
-use axum::{Json, Router};
+use axum::Json;
 use serde::Deserialize;
+use utoipa::ToSchema;
+use utoipa_axum::routes;
+use utoipa_axum::router::OpenApiRouter;
 
 use crate::app_state::AppState;
 use crate::error::AppError;
@@ -23,18 +25,27 @@ fn is_dev(settings: &Arc<crate::config::Settings>) -> bool {
     matches!(settings.env.as_str(), "development" | "dev")
 }
 
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/logs", get(log_page))
-        .route("/logs/api", get(log_api))
+pub fn routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(log_page))
+        .routes(routes!(log_api))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 struct SinceQuery {
     since: Option<usize>,
 }
 
-/// GET /logs — the HTML viewer page.
+/// GET /logs — the HTML viewer page (dev mode only).
+#[utoipa::path(
+    get,
+    path = "/logs",
+    responses(
+        (status = 200, description = "HTML log viewer page"),
+        (status = 404, description = "Not available in production"),
+    ),
+    tag = "logs",
+)]
 async fn log_page(
     State(state): State<AppState>,
 ) -> Result<Response, AppError> {
@@ -44,7 +55,17 @@ async fn log_page(
     Ok(Html(LOG_HTML).into_response())
 }
 
-/// GET /logs/api — long-poll new entries since `since` index.
+/// GET /logs/api — long-poll new entries since `since` index (dev mode only).
+#[utoipa::path(
+    get,
+    path = "/logs/api",
+    params(("since" = Option<usize>, Query, description = "Index to poll from")),
+    responses(
+        (status = 200, body = serde_json::Value),
+        (status = 404, description = "Not available in production"),
+    ),
+    tag = "logs",
+)]
 async fn log_api(
     State(state): State<AppState>,
     Query(q): Query<SinceQuery>,

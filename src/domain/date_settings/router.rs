@@ -1,13 +1,15 @@
 //! Date settings — CRUD + check. JWT-protected.
 
 use axum::extract::{Path, Query, State};
-use axum::routing::get;
-use axum::{Json, Router};
+use axum::Json;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
     QuerySelect, Set,
 };
 use serde::Deserialize;
+use utoipa::ToSchema;
+use utoipa_axum::routes;
+use utoipa_axum::router::OpenApiRouter;
 use validator::{Validate, ValidationError};
 
 use crate::app_state::AppState;
@@ -36,7 +38,7 @@ fn require_owner(auth: &AuthUser, photographer_id: i32) -> Result<(), AppError> 
     }
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct CreateReq {
     #[validate(range(min = 1))]
     pub photographer_id: i32,
@@ -49,7 +51,7 @@ pub struct CreateReq {
     pub reason: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct UpdateReq {
     pub target_date: Option<String>,
     pub start_time: Option<String>,
@@ -59,29 +61,37 @@ pub struct UpdateReq {
     pub reason: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct ListQuery {
     pub page: Option<u64>,
     pub page_size: Option<u64>,
     pub photographer_id: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct CheckQuery {
     pub photographer_id: i32,
     pub target_date: String,
 }
 
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/date-settings", get(list).post(create))
-        .route("/date-settings/check", get(check))
-        .route(
-            "/date-settings/{id}",
-            get(read).put(update).delete(delete_one),
-        )
+pub fn routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(list, create))
+        .routes(routes!(read, update, delete_one))
+        .routes(routes!(check))
 }
 
+/// GET /date-settings — list date settings.
+#[utoipa::path(
+    get,
+    path = "/date-settings",
+    params(ListQuery),
+    responses(
+        (status = 200, body = ApiResponse<PaginatedData<serde_json::Value>>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    tag = "date-settings",
+)]
 async fn list(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -122,6 +132,19 @@ async fn list(
     ))))
 }
 
+/// GET /date-settings/{id} — read a single date setting.
+#[utoipa::path(
+    get,
+    path = "/date-settings/{id}",
+    params(("id" = i32, Path, description = "Date setting ID")),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "date-settings",
+)]
 async fn read(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -136,6 +159,19 @@ async fn read(
     Ok(Json(ApiResponse::ok(serde_json::to_value(r).unwrap())))
 }
 
+/// POST /date-settings — create a new date setting.
+#[utoipa::path(
+    post,
+    path = "/date-settings",
+    request_body = CreateReq,
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 400, description = "Input validation error"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    tag = "date-settings",
+)]
 async fn create(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -143,7 +179,6 @@ async fn create(
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
     body.validate()
         .map_err(|e| AppError::InputValidation(e.to_string()))?;
-    // Non-admin can only create for themselves
     require_owner(&auth, body.photographer_id)?;
     let m = date_setting::ActiveModel {
         photographer_id: Set(body.photographer_id),
@@ -161,6 +196,20 @@ async fn create(
     Ok(Json(ApiResponse::ok(serde_json::to_value(m).unwrap())))
 }
 
+/// PUT /date-settings/{id} — update a date setting.
+#[utoipa::path(
+    put,
+    path = "/date-settings/{id}",
+    params(("id" = i32, Path, description = "Date setting ID")),
+    request_body = UpdateReq,
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "date-settings",
+)]
 async fn update(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -199,6 +248,19 @@ async fn update(
     Ok(Json(ApiResponse::ok(serde_json::to_value(r).unwrap())))
 }
 
+/// DELETE /date-settings/{id} — delete a date setting.
+#[utoipa::path(
+    delete,
+    path = "/date-settings/{id}",
+    params(("id" = i32, Path, description = "Date setting ID")),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "date-settings",
+)]
 async fn delete_one(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -217,12 +279,23 @@ async fn delete_one(
     Ok(Json(ApiResponse::ok(())))
 }
 
+/// GET /date-settings/check — check date availability.
+#[utoipa::path(
+    get,
+    path = "/date-settings/check",
+    params(CheckQuery),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    tag = "date-settings",
+)]
 async fn check(
     State(state): State<AppState>,
     auth: AuthUser,
     Query(q): Query<CheckQuery>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
-    // Non-admin can only check for themselves
     require_owner(&auth, q.photographer_id)?;
     let day_blocked = date_setting::Entity::find()
         .filter(date_setting::Column::PhotographerId.eq(q.photographer_id))

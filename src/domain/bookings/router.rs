@@ -1,8 +1,9 @@
 //! Bookings handlers + router.
 
 use axum::extract::{Path, Query, State};
-use axum::routing::get;
-use axum::{Json, Router};
+use axum::Json;
+use utoipa_axum::routes;
+use utoipa_axum::router::OpenApiRouter;
 use validator::Validate;
 
 use crate::app_state::AppState;
@@ -13,12 +14,12 @@ use crate::response::{ApiResponse, PaginatedData};
 use super::dto::*;
 use super::service;
 
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/bookings", get(list).post(create))
-        .route("/bookings/stats", get(stats))
-        .route("/bookings/today", get(today))
-        .route("/bookings/{id}", get(read).put(update).delete(delete_booking))
+pub fn routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(list, create))
+        .routes(routes!(read, update, delete_booking))
+        .routes(routes!(stats))
+        .routes(routes!(today))
 }
 
 /// Require that the authenticated user is the owner of the resource or an admin.
@@ -32,6 +33,17 @@ fn require_owner(auth: &AuthUser, photographer_id: i32) -> Result<(), AppError> 
 
 // ── Handlers ────────────────────────────────────────────────
 
+/// GET /bookings — list bookings with pagination and filters.
+#[utoipa::path(
+    get,
+    path = "/bookings",
+    params(BookingListQuery),
+    responses(
+        (status = 200, body = ApiResponse<PaginatedData<serde_json::Value>>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    tag = "bookings",
+)]
 async fn list(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -47,6 +59,19 @@ async fn list(
     ))))
 }
 
+/// GET /bookings/{id} — read a single booking by id.
+#[utoipa::path(
+    get,
+    path = "/bookings/{id}",
+    params(("id" = i32, Path, description = "Booking ID")),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "bookings",
+)]
 async fn read(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -57,6 +82,18 @@ async fn read(
     Ok(Json(ApiResponse::ok(serde_json::to_value(b).unwrap())))
 }
 
+/// POST /bookings — create a new booking.
+#[utoipa::path(
+    post,
+    path = "/bookings",
+    request_body = CreateBookingRequest,
+    responses(
+        (status = 200, body = ApiResponse<CreateBookingData>),
+        (status = 400, description = "Input validation error"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    tag = "bookings",
+)]
 async fn create(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -68,6 +105,21 @@ async fn create(
     Ok(Json(ApiResponse::ok(data)))
 }
 
+/// PUT /bookings/{id} — update an existing booking.
+#[utoipa::path(
+    put,
+    path = "/bookings/{id}",
+    params(("id" = i32, Path, description = "Booking ID")),
+    request_body = UpdateBookingRequest,
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 400, description = "Input validation error"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "bookings",
+)]
 async fn update(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -83,6 +135,19 @@ async fn update(
     Ok(Json(ApiResponse::ok(serde_json::to_value(b).unwrap())))
 }
 
+/// DELETE /bookings/{id} — delete a booking.
+#[utoipa::path(
+    delete,
+    path = "/bookings/{id}",
+    params(("id" = i32, Path, description = "Booking ID")),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "bookings",
+)]
 async fn delete_booking(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -94,6 +159,17 @@ async fn delete_booking(
     Ok(Json(ApiResponse::ok(())))
 }
 
+/// GET /bookings/stats — booking statistics.
+#[utoipa::path(
+    get,
+    path = "/bookings/stats",
+    params(StatsQuery),
+    responses(
+        (status = 200, body = ApiResponse<StatsData>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    tag = "bookings",
+)]
 async fn stats(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -109,6 +185,17 @@ async fn stats(
     Ok(Json(ApiResponse::ok(data)))
 }
 
+/// GET /bookings/today — bookings for today.
+#[utoipa::path(
+    get,
+    path = "/bookings/today",
+    params(TodayQuery),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    tag = "bookings",
+)]
 async fn today(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -133,4 +220,3 @@ async fn today(
         serde_json::json!({ "list": list, "total": list.len() }),
     )))
 }
-

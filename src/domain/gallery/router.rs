@@ -1,13 +1,15 @@
 //! Gallery — read public, write admin. Tags as nested resource.
 
 use axum::extract::{Path, Query, State};
-use axum::routing::get;
-use axum::{Json, Router};
+use axum::Json;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
     QuerySelect, Set,
 };
 use serde::Deserialize;
+use utoipa::ToSchema;
+use utoipa_axum::routes;
+use utoipa_axum::router::OpenApiRouter;
 use validator::Validate;
 
 use crate::app_state::AppState;
@@ -18,7 +20,7 @@ use crate::response::{ApiResponse, PaginatedData};
 
 // ── Gallery DTOs ─────────────────────────────────────
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct CreateGalleryReq {
     pub group_id: Option<i32>,
     #[validate(length(min = 1))]
@@ -42,7 +44,7 @@ pub struct CreateGalleryReq {
     pub status: Option<i8>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct UpdateGalleryReq {
     pub group_id: Option<i32>,
     pub title: Option<String>,
@@ -65,7 +67,7 @@ pub struct UpdateGalleryReq {
     pub status: Option<i8>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct GalleryListQuery {
     pub page: Option<u64>,
     pub page_size: Option<u64>,
@@ -76,7 +78,7 @@ pub struct GalleryListQuery {
 
 // ── Gallery Tag DTOs ─────────────────────────────────
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct CreateTagReq {
     #[validate(length(min = 1))]
     pub tag_name: String,
@@ -84,31 +86,26 @@ pub struct CreateTagReq {
     pub sort_order: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct UpdateTagReq {
     pub tag_name: Option<String>,
     pub tag_type: Option<String>,
     pub sort_order: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct TagListQuery {
     pub page: Option<u64>,
     pub page_size: Option<u64>,
     pub tag_type: Option<String>,
 }
 
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        // Gallery
-        .route("/gallery", get(list).post(create))
-        .route("/gallery/{id}", get(read).put(update).delete(delete_one))
-        // Gallery Tags
-        .route("/gallery-tags", get(list_tags).post(create_tag))
-        .route(
-            "/gallery-tags/{id}",
-            get(read_tag).put(update_tag).delete(delete_tag),
-        )
+pub fn routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(list, create))
+        .routes(routes!(read, update, delete_one))
+        .routes(routes!(list_tags, create_tag))
+        .routes(routes!(read_tag, update_tag, delete_tag))
 }
 
 fn require_admin(auth: &AuthUser) -> Result<(), AppError> {
@@ -121,6 +118,16 @@ fn require_admin(auth: &AuthUser) -> Result<(), AppError> {
 
 // ── Gallery handlers ──────────────────────────────────
 
+/// GET /gallery — list gallery items.
+#[utoipa::path(
+    get,
+    path = "/gallery",
+    params(GalleryListQuery),
+    responses(
+        (status = 200, body = ApiResponse<PaginatedData<serde_json::Value>>),
+    ),
+    tag = "gallery",
+)]
 async fn list(
     State(state): State<AppState>,
     Query(q): Query<GalleryListQuery>,
@@ -151,6 +158,17 @@ async fn list(
     Ok(Json(ApiResponse::ok(PaginatedData::new(list, total, page, ps))))
 }
 
+/// GET /gallery/{id} — read a gallery item.
+#[utoipa::path(
+    get,
+    path = "/gallery/{id}",
+    params(("id" = i32, Path, description = "Gallery ID")),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "gallery",
+)]
 async fn read(
     State(state): State<AppState>,
     Path(id): Path<i32>,
@@ -163,6 +181,18 @@ async fn read(
     Ok(Json(ApiResponse::ok(serde_json::to_value(r).unwrap())))
 }
 
+/// POST /gallery — create a gallery item (admin).
+#[utoipa::path(
+    post,
+    path = "/gallery",
+    request_body = CreateGalleryReq,
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 400, description = "Input validation error"),
+        (status = 403, description = "Forbidden — admin only"),
+    ),
+    tag = "gallery",
+)]
 async fn create(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -201,6 +231,19 @@ async fn create(
     Ok(Json(ApiResponse::ok(serde_json::to_value(m).unwrap())))
 }
 
+/// PUT /gallery/{id} — update a gallery item (admin).
+#[utoipa::path(
+    put,
+    path = "/gallery/{id}",
+    params(("id" = i32, Path, description = "Gallery ID")),
+    request_body = UpdateGalleryReq,
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 403, description = "Forbidden — admin only"),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "gallery",
+)]
 async fn update(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -238,6 +281,17 @@ async fn update(
     Ok(Json(ApiResponse::ok(serde_json::to_value(r).unwrap())))
 }
 
+/// DELETE /gallery/{id} — delete a gallery item (admin).
+#[utoipa::path(
+    delete,
+    path = "/gallery/{id}",
+    params(("id" = i32, Path, description = "Gallery ID")),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 403, description = "Forbidden — admin only"),
+    ),
+    tag = "gallery",
+)]
 async fn delete_one(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -253,6 +307,16 @@ async fn delete_one(
 
 // ── Tag handlers ──────────────────────────────────────
 
+/// GET /gallery-tags — list gallery tags.
+#[utoipa::path(
+    get,
+    path = "/gallery-tags",
+    params(TagListQuery),
+    responses(
+        (status = 200, body = ApiResponse<PaginatedData<serde_json::Value>>),
+    ),
+    tag = "gallery",
+)]
 async fn list_tags(
     State(state): State<AppState>,
     Query(q): Query<TagListQuery>,
@@ -279,6 +343,17 @@ async fn list_tags(
     Ok(Json(ApiResponse::ok(PaginatedData::new(list, total, page, ps))))
 }
 
+/// GET /gallery-tags/{id} — read a gallery tag.
+#[utoipa::path(
+    get,
+    path = "/gallery-tags/{id}",
+    params(("id" = i32, Path, description = "Tag ID")),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "gallery",
+)]
 async fn read_tag(
     State(state): State<AppState>,
     Path(id): Path<i32>,
@@ -291,6 +366,18 @@ async fn read_tag(
     Ok(Json(ApiResponse::ok(serde_json::to_value(r).unwrap())))
 }
 
+/// POST /gallery-tags — create a gallery tag (admin).
+#[utoipa::path(
+    post,
+    path = "/gallery-tags",
+    request_body = CreateTagReq,
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 400, description = "Input validation error"),
+        (status = 403, description = "Forbidden — admin only"),
+    ),
+    tag = "gallery",
+)]
 async fn create_tag(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -312,6 +399,19 @@ async fn create_tag(
     Ok(Json(ApiResponse::ok(serde_json::to_value(m).unwrap())))
 }
 
+/// PUT /gallery-tags/{id} — update a gallery tag (admin).
+#[utoipa::path(
+    put,
+    path = "/gallery-tags/{id}",
+    params(("id" = i32, Path, description = "Tag ID")),
+    request_body = UpdateTagReq,
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 403, description = "Forbidden — admin only"),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "gallery",
+)]
 async fn update_tag(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -332,6 +432,17 @@ async fn update_tag(
     Ok(Json(ApiResponse::ok(serde_json::to_value(r).unwrap())))
 }
 
+/// DELETE /gallery-tags/{id} — delete a gallery tag (admin).
+#[utoipa::path(
+    delete,
+    path = "/gallery-tags/{id}",
+    params(("id" = i32, Path, description = "Tag ID")),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 403, description = "Forbidden — admin only"),
+    ),
+    tag = "gallery",
+)]
 async fn delete_tag(
     State(state): State<AppState>,
     auth: AuthUser,

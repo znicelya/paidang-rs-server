@@ -1,10 +1,11 @@
 //! DTOs for the user domain.
 
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use validator::Validate;
 
 /// GET /user/profile response data.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct ProfileData {
     pub user_id: i32,
     pub openid: String,
@@ -24,7 +25,7 @@ pub struct ProfileData {
 }
 
 /// PUT /user/profile request body — all fields optional.
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct UpdateProfileRequest {
     pub phone: Option<String>,
     pub nickname: Option<String>,

@@ -86,7 +86,7 @@ pub struct UpdateBookingRequest {
 }
 
 /// Booking list query params.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct BookingListQuery {
     pub page: Option<u64>,
     pub page_size: Option<u64>,
@@ -95,12 +95,12 @@ pub struct BookingListQuery {
     pub booking_date: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct StatsQuery {
     pub photographer_id: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct TodayQuery {
     pub photographer_id: Option<i32>,
 }

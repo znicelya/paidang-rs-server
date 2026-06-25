@@ -13,6 +13,15 @@ use super::dto::{self, UpdateProfileRequest};
 use super::service;
 
 /// GET /user/profile — read the authenticated user's profile.
+#[utoipa::path(
+    get,
+    path = "/user/profile",
+    responses(
+        (status = 200, body = ApiResponse<dto::ProfileData>),
+        (status = 401, description = "Unauthorized"),
+    ),
+    tag = "user",
+)]
 pub async fn get_profile(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -22,6 +31,17 @@ pub async fn get_profile(
 }
 
 /// PUT /user/profile — update the authenticated user's profile.
+#[utoipa::path(
+    put,
+    path = "/user/profile",
+    request_body = UpdateProfileRequest,
+    responses(
+        (status = 200, body = ApiResponse<dto::ProfileData>),
+        (status = 400, description = "Input validation error"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    tag = "user",
+)]
 pub async fn update_profile(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -38,6 +58,17 @@ pub async fn update_profile(
 /// Ported from `paidang-worker-server/src/endpoints/user/avatarUpload.ts`.
 /// Multipart form with `file` field. In M2 this is a stub; the actual COS
 /// upload + moderation pipeline is wired in M5 (`domain/files`).
+#[utoipa::path(
+    post,
+    path = "/user/avatar",
+    request_body(content_type = "multipart/form-data", description = "Multipart form with `file` field"),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 400, description = "No file provided"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    tag = "user",
+)]
 pub async fn upload_avatar(
     State(_state): State<AppState>,
     auth: AuthUser,

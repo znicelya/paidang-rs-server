@@ -8,9 +8,11 @@ use axum::body::Body;
 use axum::extract::{Multipart, Path, Query, State};
 use axum::http::{header, StatusCode};
 use axum::response::IntoResponse;
-use axum::routing::{delete, get, post};
-use axum::{Json, Router};
+use axum::Json;
 use serde::Deserialize;
+use utoipa::ToSchema;
+use utoipa_axum::routes;
+use utoipa_axum::router::OpenApiRouter;
 
 use crate::app_state::AppState;
 use crate::error::AppError;
@@ -20,22 +22,20 @@ use crate::response::ApiResponse;
 
 // ── DTOs ─────────────────────────────────────────────
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct ListQuery {
     pub prefix: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct DeleteQuery {
     pub key: String,
 }
 
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/files", post(upload))
-        .route("/files", get(list))
-        .route("/files/{*path}", get(download))
-        .route("/files", delete(delete_file))
+pub fn routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(upload, list, delete_file))
+        .routes(routes!(download))
 }
 
 // ── Handlers ──────────────────────────────────────────
@@ -45,6 +45,18 @@ pub fn routes() -> Router<AppState> {
 /// Fields:
 /// - `file` (required): the binary file
 /// - `prefix` (optional): storage path prefix, e.g. "gallery/" or "avatars/"
+#[utoipa::path(
+    post,
+    path = "/files",
+    request_body(content_type = "multipart/form-data", description = "Multipart form with file field"),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 400, description = "No file provided"),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "COS not configured"),
+    ),
+    tag = "files",
+)]
 async fn upload(
     State(state): State<AppState>,
     _auth: AuthUser,
@@ -135,6 +147,16 @@ async fn upload(
 }
 
 /// GET /files/*path — proxy download from COS.
+#[utoipa::path(
+    get,
+    path = "/files/{*path}",
+    params(("path" = String, Path, description = "File path in COS bucket")),
+    responses(
+        (status = 200, description = "File content"),
+        (status = 500, description = "COS not configured"),
+    ),
+    tag = "files",
+)]
 async fn download(
     State(state): State<AppState>,
     Path(path): Path<String>,
@@ -159,6 +181,17 @@ async fn download(
 }
 
 /// GET /files — list objects by prefix.
+#[utoipa::path(
+    get,
+    path = "/files",
+    params(ListQuery),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "COS not configured"),
+    ),
+    tag = "files",
+)]
 async fn list(
     State(state): State<AppState>,
     _auth: AuthUser,
@@ -177,7 +210,18 @@ async fn list(
     }))))
 }
 
-/// DELETE /files?key= — delete an object.
+/// DELETE /files?key= — delete an object (admin only).
+#[utoipa::path(
+    delete,
+    path = "/files",
+    params(DeleteQuery),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 403, description = "Forbidden — admin only"),
+        (status = 500, description = "COS not configured"),
+    ),
+    tag = "files",
+)]
 async fn delete_file(
     State(state): State<AppState>,
     auth: AuthUser,

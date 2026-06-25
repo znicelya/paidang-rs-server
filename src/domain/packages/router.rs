@@ -1,8 +1,9 @@
 //! Packages router — read public, write admin.
 
 use axum::extract::{Path, Query, State};
-use axum::routing::{get, put};
-use axum::{Json, Router};
+use axum::Json;
+use utoipa_axum::routes;
+use utoipa_axum::router::OpenApiRouter;
 use validator::Validate;
 
 use crate::app_state::AppState;
@@ -13,26 +14,14 @@ use crate::response::{ApiResponse, PaginatedData};
 use super::dto::*;
 use super::service;
 
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        // Packages
-        .route("/packages", get(list).post(create))
-        .route("/packages/{id}", get(read).put(update).delete(delete_one))
-        // Package Items
-        .route(
-            "/packages/{package_id}/items",
-            get(list_items).post(create_item),
-        )
-        .route("/package-items/{item_id}", put(update_item).delete(delete_item))
-        // Package Gallery
-        .route(
-            "/packages/{package_id}/gallery",
-            get(list_gallery).post(create_gallery),
-        )
-        .route(
-            "/package-gallery/{gallery_id}",
-            put(update_gallery).delete(delete_gallery),
-        )
+pub fn routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(list, create))
+        .routes(routes!(read, update, delete_one))
+        .routes(routes!(list_items, create_item))
+        .routes(routes!(update_item, delete_item))
+        .routes(routes!(list_gallery, create_gallery))
+        .routes(routes!(update_gallery, delete_gallery))
 }
 
 fn require_admin(auth: &AuthUser) -> Result<(), AppError> {
@@ -45,6 +34,16 @@ fn require_admin(auth: &AuthUser) -> Result<(), AppError> {
 
 // ── Package handlers ────────────────────────────────────
 
+/// GET /packages — list packages with filters.
+#[utoipa::path(
+    get,
+    path = "/packages",
+    params(ListQuery),
+    responses(
+        (status = 200, body = ApiResponse<PaginatedData<serde_json::Value>>),
+    ),
+    tag = "packages",
+)]
 async fn list(
     State(state): State<AppState>,
     Query(q): Query<ListQuery>,
@@ -56,6 +55,17 @@ async fn list(
     Ok(Json(ApiResponse::ok(PaginatedData::new(list, total, page, ps))))
 }
 
+/// GET /packages/{id} — read a single package.
+#[utoipa::path(
+    get,
+    path = "/packages/{id}",
+    params(("id" = i32, Path, description = "Package ID")),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "packages",
+)]
 async fn read(
     State(state): State<AppState>,
     Path(id): Path<i32>,
@@ -64,6 +74,18 @@ async fn read(
     Ok(Json(ApiResponse::ok(serde_json::to_value(p).unwrap())))
 }
 
+/// POST /packages — create a new package (admin).
+#[utoipa::path(
+    post,
+    path = "/packages",
+    request_body = CreatePackageReq,
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 400, description = "Input validation error"),
+        (status = 403, description = "Forbidden — admin only"),
+    ),
+    tag = "packages",
+)]
 async fn create(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -76,6 +98,19 @@ async fn create(
     Ok(Json(ApiResponse::ok(serde_json::to_value(p).unwrap())))
 }
 
+/// PUT /packages/{id} — update a package (admin).
+#[utoipa::path(
+    put,
+    path = "/packages/{id}",
+    params(("id" = i32, Path, description = "Package ID")),
+    request_body = UpdatePackageReq,
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 403, description = "Forbidden — admin only"),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "packages",
+)]
 async fn update(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -87,6 +122,17 @@ async fn update(
     Ok(Json(ApiResponse::ok(serde_json::to_value(p).unwrap())))
 }
 
+/// DELETE /packages/{id} — delete a package (admin).
+#[utoipa::path(
+    delete,
+    path = "/packages/{id}",
+    params(("id" = i32, Path, description = "Package ID")),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 403, description = "Forbidden — admin only"),
+    ),
+    tag = "packages",
+)]
 async fn delete_one(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -99,6 +145,16 @@ async fn delete_one(
 
 // ── Item handlers ───────────────────────────────────────
 
+/// GET /packages/{package_id}/items — list package items.
+#[utoipa::path(
+    get,
+    path = "/packages/{package_id}/items",
+    params(("package_id" = i32, Path, description = "Package ID")),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+    ),
+    tag = "packages",
+)]
 async fn list_items(
     State(state): State<AppState>,
     Path(package_id): Path<i32>,
@@ -108,6 +164,19 @@ async fn list_items(
     Ok(Json(ApiResponse::ok(serde_json::json!({ "list": list }))))
 }
 
+/// POST /packages/{package_id}/items — create a package item (admin).
+#[utoipa::path(
+    post,
+    path = "/packages/{package_id}/items",
+    params(("package_id" = i32, Path, description = "Package ID")),
+    request_body = CreateItemReq,
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 400, description = "Input validation error"),
+        (status = 403, description = "Forbidden — admin only"),
+    ),
+    tag = "packages",
+)]
 async fn create_item(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -120,6 +189,19 @@ async fn create_item(
     Ok(Json(ApiResponse::ok(serde_json::to_value(m).unwrap())))
 }
 
+/// PUT /package-items/{item_id} — update a package item (admin).
+#[utoipa::path(
+    put,
+    path = "/package-items/{item_id}",
+    params(("item_id" = i32, Path, description = "Item ID")),
+    request_body = UpdateItemReq,
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 403, description = "Forbidden — admin only"),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "packages",
+)]
 async fn update_item(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -131,6 +213,17 @@ async fn update_item(
     Ok(Json(ApiResponse::ok(serde_json::to_value(m).unwrap())))
 }
 
+/// DELETE /package-items/{item_id} — delete a package item (admin).
+#[utoipa::path(
+    delete,
+    path = "/package-items/{item_id}",
+    params(("item_id" = i32, Path, description = "Item ID")),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 403, description = "Forbidden — admin only"),
+    ),
+    tag = "packages",
+)]
 async fn delete_item(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -143,6 +236,16 @@ async fn delete_item(
 
 // ── Gallery handlers ────────────────────────────────────
 
+/// GET /packages/{package_id}/gallery — list package gallery images.
+#[utoipa::path(
+    get,
+    path = "/packages/{package_id}/gallery",
+    params(("package_id" = i32, Path, description = "Package ID")),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+    ),
+    tag = "packages",
+)]
 async fn list_gallery(
     State(state): State<AppState>,
     Path(package_id): Path<i32>,
@@ -152,6 +255,19 @@ async fn list_gallery(
     Ok(Json(ApiResponse::ok(serde_json::json!({ "list": list }))))
 }
 
+/// POST /packages/{package_id}/gallery — add a gallery image (admin).
+#[utoipa::path(
+    post,
+    path = "/packages/{package_id}/gallery",
+    params(("package_id" = i32, Path, description = "Package ID")),
+    request_body = CreateGalleryReq,
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 400, description = "Input validation error"),
+        (status = 403, description = "Forbidden — admin only"),
+    ),
+    tag = "packages",
+)]
 async fn create_gallery(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -164,6 +280,19 @@ async fn create_gallery(
     Ok(Json(ApiResponse::ok(serde_json::to_value(m).unwrap())))
 }
 
+/// PUT /package-gallery/{gallery_id} — update a gallery image (admin).
+#[utoipa::path(
+    put,
+    path = "/package-gallery/{gallery_id}",
+    params(("gallery_id" = i32, Path, description = "Gallery ID")),
+    request_body = UpdateGalleryReq,
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 403, description = "Forbidden — admin only"),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "packages",
+)]
 async fn update_gallery(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -175,6 +304,17 @@ async fn update_gallery(
     Ok(Json(ApiResponse::ok(serde_json::to_value(m).unwrap())))
 }
 
+/// DELETE /package-gallery/{gallery_id} — delete a gallery image (admin).
+#[utoipa::path(
+    delete,
+    path = "/package-gallery/{gallery_id}",
+    params(("gallery_id" = i32, Path, description = "Gallery ID")),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 403, description = "Forbidden — admin only"),
+    ),
+    tag = "packages",
+)]
 async fn delete_gallery(
     State(state): State<AppState>,
     auth: AuthUser,

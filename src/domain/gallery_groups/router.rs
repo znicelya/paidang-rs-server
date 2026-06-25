@@ -1,13 +1,15 @@
 //! Gallery groups — read public, write admin.
 
 use axum::extract::{Path, Query, State};
-use axum::routing::get;
-use axum::{Json, Router};
+use axum::Json;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
     QuerySelect, Set,
 };
 use serde::Deserialize;
+use utoipa::ToSchema;
+use utoipa_axum::routes;
+use utoipa_axum::router::OpenApiRouter;
 use validator::Validate;
 
 use crate::app_state::AppState;
@@ -18,7 +20,7 @@ use crate::response::{ApiResponse, PaginatedData};
 
 // ── DTOs ─────────────────────────────────────────────
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct CreateReq {
     #[validate(length(min = 1))]
     pub name: String,
@@ -29,7 +31,7 @@ pub struct CreateReq {
     pub status: Option<i8>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct UpdateReq {
     pub name: Option<String>,
     pub cover_image: Option<String>,
@@ -39,19 +41,16 @@ pub struct UpdateReq {
     pub status: Option<i8>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct ListQuery {
     pub page: Option<u64>,
     pub page_size: Option<u64>,
 }
 
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/gallery-groups", get(list).post(create))
-        .route(
-            "/gallery-groups/{id}",
-            get(read).put(update).delete(delete_one),
-        )
+pub fn routes() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(list, create))
+        .routes(routes!(read, update, delete_one))
 }
 
 fn require_admin(auth: &AuthUser) -> Result<(), AppError> {
@@ -62,6 +61,16 @@ fn require_admin(auth: &AuthUser) -> Result<(), AppError> {
     }
 }
 
+/// GET /gallery-groups — list gallery groups.
+#[utoipa::path(
+    get,
+    path = "/gallery-groups",
+    params(ListQuery),
+    responses(
+        (status = 200, body = ApiResponse<PaginatedData<serde_json::Value>>),
+    ),
+    tag = "gallery-groups",
+)]
 async fn list(
     State(state): State<AppState>,
     Query(q): Query<ListQuery>,
@@ -86,6 +95,17 @@ async fn list(
     Ok(Json(ApiResponse::ok(PaginatedData::new(list, total, page, ps))))
 }
 
+/// GET /gallery-groups/{id} — read a single gallery group.
+#[utoipa::path(
+    get,
+    path = "/gallery-groups/{id}",
+    params(("id" = i32, Path, description = "Gallery group ID")),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "gallery-groups",
+)]
 async fn read(
     State(state): State<AppState>,
     Path(id): Path<i32>,
@@ -98,6 +118,18 @@ async fn read(
     Ok(Json(ApiResponse::ok(serde_json::to_value(r).unwrap())))
 }
 
+/// POST /gallery-groups — create a gallery group (admin).
+#[utoipa::path(
+    post,
+    path = "/gallery-groups",
+    request_body = CreateReq,
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 400, description = "Input validation error"),
+        (status = 403, description = "Forbidden — admin only"),
+    ),
+    tag = "gallery-groups",
+)]
 async fn create(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -123,6 +155,19 @@ async fn create(
     Ok(Json(ApiResponse::ok(serde_json::to_value(m).unwrap())))
 }
 
+/// PUT /gallery-groups/{id} — update a gallery group (admin).
+#[utoipa::path(
+    put,
+    path = "/gallery-groups/{id}",
+    params(("id" = i32, Path, description = "Gallery group ID")),
+    request_body = UpdateReq,
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 403, description = "Forbidden — admin only"),
+        (status = 404, description = "Not found"),
+    ),
+    tag = "gallery-groups",
+)]
 async fn update(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -147,6 +192,17 @@ async fn update(
     Ok(Json(ApiResponse::ok(serde_json::to_value(r).unwrap())))
 }
 
+/// DELETE /gallery-groups/{id} — delete a gallery group (admin).
+#[utoipa::path(
+    delete,
+    path = "/gallery-groups/{id}",
+    params(("id" = i32, Path, description = "Gallery group ID")),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 403, description = "Forbidden — admin only"),
+    ),
+    tag = "gallery-groups",
+)]
 async fn delete_one(
     State(state): State<AppState>,
     auth: AuthUser,

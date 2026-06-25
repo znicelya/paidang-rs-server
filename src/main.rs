@@ -57,13 +57,10 @@ async fn main() -> anyhow::Result<()> {
         "ok"
     }
 
-    // Build the root router with OpenAPI schema collection
+    // Build the root OpenApiRouter, merge ALL domain routers BEFORE split_for_parts
+    // so that #[utoipa::path] annotations from every handler are collected into the OpenAPI spec.
     let (router, openapi) = OpenApiRouter::new()
         .routes(routes!(health))
-        .split_for_parts();
-
-    let mut app = router
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", openapi))
         .merge(domain::auth::router::routes())
         .merge(domain::user::router::routes())
         .merge(domain::bookings::routes())
@@ -76,6 +73,10 @@ async fn main() -> anyhow::Result<()> {
         .merge(domain::gallery::routes())
         .merge(domain::files::routes())
         .merge(domain::logs::routes())
+        .split_for_parts();
+
+    let mut app = router
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", openapi))
         .layer(axum::Extension(middleware::auth::JwtSecret(jwt_secret)));
 
     // Inject log buffer into request extensions for the request_log middleware

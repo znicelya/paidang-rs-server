@@ -48,7 +48,7 @@ pub struct UpdatePackageReq {
     pub status: Option<i8>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct ListQuery {
     pub page: Option<u64>,
     pub page_size: Option<u64>,
@@ -73,7 +73,7 @@ pub struct CreateItemReq {
     pub is_default: Option<i8>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct UpdateItemReq {
     pub item_type: Option<String>,
     pub item_name: Option<String>,
@@ -97,7 +97,7 @@ pub struct CreateGalleryReq {
     pub sort_order: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct UpdateGalleryReq {
     pub image_url: Option<String>,
     pub image_type: Option<String>,
