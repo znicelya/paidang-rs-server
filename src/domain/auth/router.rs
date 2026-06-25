@@ -5,5 +5,5 @@ use utoipa_axum::{routes, router::OpenApiRouter};
 use crate::app_state::AppState;
 
 pub fn routes() -> OpenApiRouter<AppState> {
-    OpenApiRouter::new().routes(routes!(super::login_handler::login_handler))
+    OpenApiRouter::new().routes(routes!(super::handler::login_handler))
 }

@@ -1,4 +1,6 @@
-/// Time-slot-templates: CRUD wired inline (compact, JWT-protected, owner-scoped).
-/// Uses the same pattern as bookings: router.rs = routes() + handlers + DTOs.
-mod router;
+pub mod dto;
+pub mod handler;
+pub mod router;
+pub mod service;
+
 pub use router::routes;
