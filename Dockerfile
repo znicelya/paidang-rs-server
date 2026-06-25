@@ -6,7 +6,7 @@ WORKDIR /app
 FROM chef AS planner
 COPY Cargo.toml Cargo.lock ./
 COPY src/ src/
-COPY migration/ migration/
+COPY src/migration/ src/migration/
 RUN cargo chef prepare --recipe-path recipe.json
 
 # ── Stage 3: Build dependencies (cached unless Cargo.toml changes) ──
@@ -21,7 +21,7 @@ RUN cargo chef cook --release --recipe-path recipe.json
 # ── Stage 4: Build application ──
 COPY Cargo.toml Cargo.lock ./
 COPY src/ src/
-COPY migration/ migration/
+COPY src/migration/ src/migration/
 COPY config/ config/
 RUN cargo build --release --bin paidang-rs-server
 
