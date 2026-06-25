@@ -1,7 +1,9 @@
-/target
+﻿/target
 .env
 .vscode/
 .idea/
 
 .codegraph
 .env
+.worktrees/
+
