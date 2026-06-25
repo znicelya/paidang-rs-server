@@ -11,7 +11,7 @@ use crate::error::AppError;
 
 use super::dto::{CreateReq, ListQuery, UpdateReq};
 
-/// List date slots with pagination, owner-scoped for non-admins.
+/// List date slots with pagination, optionally scoped to one provider.
 pub async fn list(
     state: &AppState,
     q: &ListQuery,
@@ -21,7 +21,7 @@ pub async fn list(
     let ps = q.page_size.unwrap_or(20);
     let mut s = date_slot::Entity::find();
 
-    // Owner scoping: non-admin can only see their own
+    // Provider scoping is applied by the caller when needed.
     if let Some(pid) = photographer_id {
         s = s.filter(date_slot::Column::PhotographerId.eq(pid));
     }

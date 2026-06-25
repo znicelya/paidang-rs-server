@@ -1,19 +1,19 @@
 //! Date slots handlers.
 
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use validator::Validate;
 
 use crate::app_state::AppState;
 use crate::error::AppError;
 use crate::middleware::auth::AuthUser;
-use crate::util::require_owner;
 use crate::response::{ApiResponse, PaginatedData};
+use crate::util::require_owner;
 
 use super::dto::*;
 use super::service;
 
-/// GET /date-slots — list date slots.
+/// GET /date-slots - list date slots.
 #[utoipa::path(
     get,
     path = "/date-slots",
@@ -31,13 +31,7 @@ pub async fn list(
 ) -> Result<Json<ApiResponse<PaginatedData<serde_json::Value>>>, AppError> {
     let page = q.page.unwrap_or(1);
     let ps = q.page_size.unwrap_or(20);
-    // Owner scoping: non-admin can only see their own
-    let photographer_id = if auth.role >= 2 {
-        q.photographer_id
-    } else {
-        Some(auth.user_id)
-    };
-    let (rows, total) = service::list(&state, &q, photographer_id).await?;
+    let (rows, total) = service::list(&state, &q, Some(auth.user_id)).await?;
     let list: Vec<_> = rows
         .iter()
         .map(|r| serde_json::to_value(r).unwrap())
@@ -47,7 +41,7 @@ pub async fn list(
     ))))
 }
 
-/// GET /date-slots/{id} — read a single date slot.
+/// GET /date-slots/{id} - read a single date slot.
 #[utoipa::path(
     get,
     path = "/date-slots/{id}",
@@ -70,7 +64,7 @@ pub async fn read(
     Ok(Json(ApiResponse::ok(serde_json::to_value(r).unwrap())))
 }
 
-/// POST /date-slots — create a new date slot.
+/// POST /date-slots - create a new date slot.
 #[utoipa::path(
     post,
     path = "/date-slots",
@@ -95,7 +89,7 @@ pub async fn create(
     Ok(Json(ApiResponse::ok(serde_json::to_value(m).unwrap())))
 }
 
-/// PUT /date-slots/{id} — update a date slot.
+/// PUT /date-slots/{id} - update a date slot.
 #[utoipa::path(
     put,
     path = "/date-slots/{id}",
@@ -121,7 +115,7 @@ pub async fn update(
     Ok(Json(ApiResponse::ok(serde_json::to_value(r).unwrap())))
 }
 
-/// DELETE /date-slots/{id} — delete a date slot.
+/// DELETE /date-slots/{id} - delete a date slot.
 #[utoipa::path(
     delete,
     path = "/date-slots/{id}",
@@ -145,7 +139,7 @@ pub async fn delete_one(
     Ok(Json(ApiResponse::ok(())))
 }
 
-/// GET /date-slots/day — slots for a specific day.
+/// GET /date-slots/day - slots for a specific day.
 #[utoipa::path(
     get,
     path = "/date-slots/day",
@@ -159,10 +153,8 @@ pub async fn delete_one(
 )]
 pub async fn day(
     State(state): State<AppState>,
-    auth: AuthUser,
     Query(q): Query<DayQuery>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
-    require_owner(&auth, q.photographer_id)?;
     let rows = service::day(&state, q.photographer_id, &q.slot_date).await?;
     let list: Vec<_> = rows
         .iter()
@@ -171,7 +163,7 @@ pub async fn day(
     Ok(Json(ApiResponse::ok(serde_json::json!({"list":list}))))
 }
 
-/// GET /date-slots/monthly — slots for a month.
+/// GET /date-slots/monthly - slots for a month.
 #[utoipa::path(
     get,
     path = "/date-slots/monthly",
@@ -185,10 +177,8 @@ pub async fn day(
 )]
 pub async fn monthly(
     State(state): State<AppState>,
-    auth: AuthUser,
     Query(q): Query<MonthlyQuery>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
-    require_owner(&auth, q.photographer_id)?;
     let rows = service::monthly(&state, q.photographer_id, &q.year_month).await?;
     let list: Vec<_> = rows
         .iter()

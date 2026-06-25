@@ -21,7 +21,7 @@ pub async fn list(
     let ps = q.page_size.unwrap_or(20);
     let mut s = date_setting::Entity::find();
 
-    // Owner scoping: non-admin can only see their own
+    // Provider scoping is applied by the caller when needed.
     if let Some(pid) = photographer_id {
         s = s.filter(date_setting::Column::PhotographerId.eq(pid));
     }

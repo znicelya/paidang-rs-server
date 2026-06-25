@@ -1,19 +1,19 @@
-//! Bookings handlers — JWT-protected, ownership scoped.
+//! Bookings handlers - JWT-protected, ownership scoped.
 
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use validator::Validate;
 
 use crate::app_state::AppState;
 use crate::error::AppError;
 use crate::middleware::auth::AuthUser;
-use crate::util::require_owner;
 use crate::response::{ApiResponse, PaginatedData};
+use crate::util::require_owner;
 
 use super::dto::*;
 use super::service;
 
-/// GET /bookings — list bookings with pagination and filters.
+/// GET /bookings - list bookings with pagination and filters.
 #[utoipa::path(
     get,
     path = "/bookings",
@@ -31,15 +31,17 @@ pub async fn list(
 ) -> Result<Json<ApiResponse<PaginatedData<serde_json::Value>>>, AppError> {
     let page = q.page.unwrap_or(1);
     let page_size = q.page_size.unwrap_or(20);
-    let (rows, total) = service::list(&state, &q, Some(auth.user_id), auth.role).await?;
-    let list: Vec<serde_json::Value> =
-        rows.iter().map(|r| serde_json::to_value(r).unwrap()).collect();
+    let (rows, total) = service::list(&state, &q, auth.user_id).await?;
+    let list: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|r| serde_json::to_value(r).unwrap())
+        .collect();
     Ok(Json(ApiResponse::ok(PaginatedData::new(
         list, total, page, page_size,
     ))))
 }
 
-/// GET /bookings/{id} — read a single booking by id.
+/// GET /bookings/{id} - read a single booking by id.
 #[utoipa::path(
     get,
     path = "/bookings/{id}",
@@ -62,7 +64,7 @@ pub async fn read(
     Ok(Json(ApiResponse::ok(serde_json::to_value(b).unwrap())))
 }
 
-/// POST /bookings — create a new booking.
+/// POST /bookings - create a new booking.
 #[utoipa::path(
     post,
     path = "/bookings",
@@ -76,16 +78,15 @@ pub async fn read(
 )]
 pub async fn create(
     State(state): State<AppState>,
-    auth: AuthUser,
     Json(body): Json<CreateBookingRequest>,
 ) -> Result<Json<ApiResponse<CreateBookingData>>, AppError> {
     body.validate()
         .map_err(|e| AppError::InputValidation(e.to_string()))?;
-    let data = service::create(&state, &body, Some(auth.user_id)).await?;
+    let data = service::create(&state, &body, None, "customer").await?;
     Ok(Json(ApiResponse::ok(data)))
 }
 
-/// PUT /bookings/{id} — update an existing booking.
+/// PUT /bookings/{id} - update an existing booking.
 #[utoipa::path(
     put,
     path = "/bookings/{id}",
@@ -115,7 +116,7 @@ pub async fn update(
     Ok(Json(ApiResponse::ok(serde_json::to_value(b).unwrap())))
 }
 
-/// DELETE /bookings/{id} — delete a booking.
+/// DELETE /bookings/{id} - delete a booking.
 #[utoipa::path(
     delete,
     path = "/bookings/{id}",
@@ -139,7 +140,7 @@ pub async fn delete_booking(
     Ok(Json(ApiResponse::ok(())))
 }
 
-/// GET /bookings/stats — booking statistics.
+/// GET /bookings/stats - booking statistics.
 #[utoipa::path(
     get,
     path = "/bookings/stats",
@@ -153,19 +154,13 @@ pub async fn delete_booking(
 pub async fn stats(
     State(state): State<AppState>,
     auth: AuthUser,
-    Query(q): Query<StatsQuery>,
+    Query(_q): Query<StatsQuery>,
 ) -> Result<Json<ApiResponse<StatsData>>, AppError> {
-    // Enforce owner scoping: non-admin can only see own stats
-    let pid = if auth.role >= 2 {
-        q.photographer_id
-    } else {
-        Some(auth.user_id)
-    };
-    let data = service::stats(&state, pid).await?;
+    let data = service::stats(&state, Some(auth.user_id)).await?;
     Ok(Json(ApiResponse::ok(data)))
 }
 
-/// GET /bookings/today — bookings for today.
+/// GET /bookings/today - bookings for today.
 #[utoipa::path(
     get,
     path = "/bookings/today",
@@ -179,7 +174,7 @@ pub async fn stats(
 pub async fn today(
     State(state): State<AppState>,
     auth: AuthUser,
-    Query(q): Query<TodayQuery>,
+    Query(_q): Query<TodayQuery>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
     use chrono::Local;
     let today_str = Local::now().format("%Y-%m-%d").to_string();
@@ -188,14 +183,14 @@ pub async fn today(
         page: Some(1),
         page_size: Some(200),
         booking_date: Some(today_str),
-        photographer_id: q.photographer_id,
+        photographer_id: Some(auth.user_id),
         status: None,
     };
-    // Use real auth role instead of hardcoded admin (2)
-    let (rows, _) =
-        service::list(&state, &query, Some(auth.user_id), auth.role).await?;
-    let list: Vec<serde_json::Value> =
-        rows.iter().map(|r| serde_json::to_value(r).unwrap()).collect();
+    let (rows, _) = service::list(&state, &query, auth.user_id).await?;
+    let list: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|r| serde_json::to_value(r).unwrap())
+        .collect();
     Ok(Json(ApiResponse::ok(
         serde_json::json!({ "list": list, "total": list.len() }),
     )))

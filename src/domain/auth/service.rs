@@ -1,4 +1,4 @@
-//! Auth service — WeChat login + auto-register + JWT issuance.
+//! Auth service: WeChat login, auto-register, and JWT issuance.
 //! Ported from `paidang-worker-server/src/endpoints/auth/login.ts`.
 
 use chrono::Utc;
@@ -8,15 +8,15 @@ use crate::app_state::AppState;
 use crate::entity::{user, user_profile};
 use crate::error::AppError;
 use crate::external::wechat::WechatApi;
-use crate::middleware::auth::{sign_jwt, Claims};
+use crate::middleware::auth::{Claims, sign_jwt};
 
 use super::dto::LoginData;
 
 /// Main login/orchestration. Called by the login handler.
 ///
-/// # Flow (spec §6.1)
-/// 1. code2session → openid, session_key, unionid
-/// 2. Resolve phone: plain `phone` first, fallback `phone_code` → get_user_phone
+/// # Flow
+/// 1. code2session returns openid, session_key, and unionid.
+/// 2. Resolve phone: plain phone first, then phone_code via get_user_phone.
 /// 3. User lookup by openid: UPDATE if found, INSERT if new (+ user_profile)
 /// 4. Sign JWT, return user + token + is_new
 pub async fn login(
@@ -30,8 +30,7 @@ pub async fn login(
 ) -> Result<LoginData, AppError> {
     // 1. Exchange code for WeChat session
     let session = wechat.code2session(code).await?;
-
-    // 2. Get phone number — plain first, fallback phone_code (WeChat auth)
+    // 2. Get phone number: plain phone first, then phone_code.
     let mut phone_number: Option<String> = phone.map(|s| s.to_owned());
     if phone_number.is_none() {
         if let Some(pc) = phone_code {
@@ -126,7 +125,6 @@ pub async fn login(
     let claims = Claims {
         sub: user_id,
         openid: record.openid.clone(),
-        role: record.role,
         exp,
     };
     let token = sign_jwt(claims, jwt_secret)?;

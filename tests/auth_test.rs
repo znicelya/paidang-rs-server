@@ -15,7 +15,6 @@ async fn jwt_sign_and_verify() {
     let claims = auth::Claims {
         sub: 42,
         openid: "test-openid-42".into(),
-        role: 1,
         exp: (chrono::Utc::now() + chrono::Duration::hours(1)).timestamp() as u64,
     };
 
@@ -23,7 +22,6 @@ async fn jwt_sign_and_verify() {
     let decoded = auth::verify_jwt(&token, "test-secret").unwrap();
 
     assert_eq!(decoded.sub, 42);
-    assert_eq!(decoded.role, 1);
     assert_eq!(decoded.openid, "test-openid-42");
 }
 
@@ -38,7 +36,6 @@ async fn jwt_verify_wrong_secret_fails() {
     let claims = auth::Claims {
         sub: 1,
         openid: "o".into(),
-        role: 0,
         exp: (chrono::Utc::now() + chrono::Duration::hours(1)).timestamp() as u64,
     };
     let token = auth::sign_jwt(claims, "secret-a").unwrap();
@@ -51,7 +48,6 @@ async fn jwt_expired_token_fails() {
     let claims = auth::Claims {
         sub: 1,
         openid: "o".into(),
-        role: 0,
         exp: (chrono::Utc::now() - chrono::Duration::hours(1)).timestamp() as u64,
     };
     let token = auth::sign_jwt(claims, "test-secret").unwrap();
@@ -59,7 +55,7 @@ async fn jwt_expired_token_fails() {
     assert!(result.is_err());
 }
 
-// ── DB-backed tests ────────────────────────────────────────
+// 鈹€鈹€ DB-backed tests 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 #[tokio::test]
 async fn user_insert_and_find() {

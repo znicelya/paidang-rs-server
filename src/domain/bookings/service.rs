@@ -1,14 +1,14 @@
-//! Bookings service — ported from `paidang-worker-server/src/endpoints/bookings/`.
+//! Bookings service - ported from `paidang-worker-server/src/endpoints/bookings/`.
 //!
-//! **Slot lock/release logic** (spec §4.2, migration 0004): Formerly DB triggers
+//! **Slot lock/release logic** (spec 4.2): Formerly DB triggers
 //! `lock_slot_on_booking` / `release_slot_on_booking_status`. Now explicit in service:
 
 //! - **Lock** on create (INSERT, status IN pending/confirmed, slot_instance_id non-null)
-//!   → set date_slot.is_booked=1, booking_id=NEW.booking_id in a write transaction
+//!   set date_slot.is_booked=1, booking_id=NEW.booking_id in a write transaction
 //!   (SELECT ... FOR UPDATE to prevent concurrent double-booking).
 //! - **Release** on status change (UPDATE, new status in cancelled/refunded/completed,
 //!   old status in pending/confirmed/in_progress, slot_instance_id non-null)
-//!   → set date_slot.is_booked=0, booking_id=NULL in a write transaction.
+//!   set date_slot.is_booked=0, booking_id=NULL in a write transaction.
 
 use chrono::Utc;
 use sea_orm::{
@@ -22,7 +22,7 @@ use crate::error::AppError;
 
 use super::dto::{CreateBookingData, CreateBookingRequest, StatsData, UpdateBookingRequest};
 
-/// The possible "old statuses" for which a slot release is valid (spec §4.2).
+/// The possible "old statuses" for which a slot release is valid (spec 4.2).
 const LOCKED_STATUSES: &[&str] = &["pending", "confirmed", "in_progress"];
 const RELEASE_STATUSES: &[&str] = &["cancelled", "refunded", "completed"];
 
@@ -73,22 +73,13 @@ async fn insert_log(
 pub async fn list(
     state: &AppState,
     query: &super::dto::BookingListQuery,
-    auth_user_id: Option<i32>,
-    auth_role: i8,
+    provider_id: i32,
 ) -> Result<(Vec<booking::Model>, u64), AppError> {
     let page = query.page.unwrap_or(1);
     let page_size = query.page_size.unwrap_or(20).min(100);
 
-    let mut select = booking::Entity::find();
-
-    // Owner filter: photographers see only their own unless admin
-    if auth_role < 2 {
-        if let Some(uid) = auth_user_id {
-            select = select.filter(booking::Column::PhotographerId.eq(uid));
-        }
-    } else if let Some(pid) = query.photographer_id {
-        select = select.filter(booking::Column::PhotographerId.eq(pid));
-    }
+    let mut select =
+        booking::Entity::find().filter(booking::Column::PhotographerId.eq(provider_id));
 
     if let Some(ref s) = query.status {
         select = select.filter(booking::Column::Status.eq(s));
@@ -119,7 +110,7 @@ pub async fn read(state: &AppState, id: i32) -> Result<booking::Model, AppError>
         .one(&state.db)
         .await
         .map_err(|e| AppError::Internal(format!("DB: {e}")))?
-        .ok_or(AppError::NotFound("预约不存在".into()))
+        .ok_or(AppError::NotFound("booking not found".into()))
 }
 
 /// Create a booking with slot lock.
@@ -130,8 +121,9 @@ pub async fn create(
     state: &AppState,
     body: &CreateBookingRequest,
     operator_id: Option<i32>,
+    operator_type: &str,
 ) -> Result<CreateBookingData, AppError> {
-    // ── 1. Full-day block ─────────────────────────────────
+    // 1. Full-day block
     let day_blocked = date_setting::Entity::find()
         .filter(date_setting::Column::PhotographerId.eq(body.photographer_id))
         .filter(date_setting::Column::TargetDate.eq(&body.booking_date))
@@ -141,14 +133,14 @@ pub async fn create(
         .await
         .map_err(|e| AppError::Internal(format!("DB: {e}")))?;
     if let Some(block) = day_blocked {
-        let reason = block.reason.map(|r| format!("：{r}")).unwrap_or_default();
+        let reason = block.reason.map(|r| format!(": {r}")).unwrap_or_default();
         return Err(AppError::InputValidation(format!(
-            "{} 全天不可约{reason}",
+            "{} is unavailable for the full day{reason}",
             body.booking_date
         )));
     }
 
-    // ── 2. Time-range block ───────────────────────────────
+    // 2. Time-range block
     let time_blocked = date_setting::Entity::find()
         .filter(date_setting::Column::PhotographerId.eq(body.photographer_id))
         .filter(date_setting::Column::TargetDate.eq(&body.booking_date))
@@ -160,9 +152,9 @@ pub async fn create(
         .await
         .map_err(|e| AppError::Internal(format!("DB: {e}")))?;
     if let Some(block) = time_blocked {
-        let reason = block.reason.map(|r| format!("：{r}")).unwrap_or_default();
+        let reason = block.reason.map(|r| format!(": {r}")).unwrap_or_default();
         return Err(AppError::InputValidation(format!(
-            "{} {}-{} 与屏蔽时段 {}-{} 冲突{reason}",
+            "{} {}-{} conflicts with unavailable period {}-{}{reason}",
             body.booking_date,
             body.start_time,
             body.end_time,
@@ -171,13 +163,11 @@ pub async fn create(
         )));
     }
 
-    // ── 3. Conflict check ─────────────────────────────────
+    // 3. Conflict check
     let conflict = booking::Entity::find()
         .filter(booking::Column::PhotographerId.eq(body.photographer_id))
         .filter(booking::Column::BookingDate.eq(&body.booking_date))
-        .filter(
-            booking::Column::Status.is_not_in(vec!["cancelled", "refunded"]),
-        )
+        .filter(booking::Column::Status.is_not_in(vec!["cancelled", "refunded"]))
         .filter(booking::Column::StartTime.lt(&body.end_time))
         .filter(booking::Column::EndTime.gt(&body.start_time))
         .one(&state.db)
@@ -185,7 +175,7 @@ pub async fn create(
         .map_err(|e| AppError::Internal(format!("DB: {e}")))?;
     if let Some(conflict) = conflict {
         return Err(AppError::InputValidation(format!(
-            "{} {}-{} 与已有预约冲突 ({}-{}, {})",
+            "{} {}-{} conflicts with existing booking ({}-{}, {})",
             body.booking_date,
             body.start_time,
             body.end_time,
@@ -205,23 +195,20 @@ pub async fn create(
         .await
         .map_err(|e| AppError::Internal(format!("txn: {e}")))?;
 
-    // ── 4. Slot lock (if slot_instance_id is provided) ────
-    let should_lock = has_slot
-        && LOCKED_STATUSES.contains(&status);
+    // 4. Slot lock (if slot_instance_id is provided)
+    let should_lock = has_slot && LOCKED_STATUSES.contains(&status);
     if should_lock {
         let slot_id = body.slot_instance_id.unwrap();
-        // SELECT … FOR UPDATE to atomically check & lock
+        // SELECT FOR UPDATE to atomically check and lock
         let slot = date_slot::Entity::find_by_id(slot_id)
             .one(&txn)
             .await
             .map_err(|e| AppError::Internal(format!("lock slot: {e}")))?
-            .ok_or_else(|| {
-                AppError::InputValidation("关联时段不存在".into())
-            })?;
+            .ok_or_else(|| AppError::InputValidation("linked time slot not found".into()))?;
 
         if slot.is_booked == Some(1) {
             return Err(AppError::InputValidation(
-                "该时段已被预约，请刷新重试".into(),
+                "time slot already booked; refresh and retry".into(),
             ));
         }
 
@@ -234,7 +221,7 @@ pub async fn create(
             .map_err(|e| AppError::Internal(format!("lock slot: {e}")))?;
     }
 
-    // ── 5. Insert booking ─────────────────────────────────
+    // 5. Insert booking
     let now_active: booking::ActiveModel = booking::ActiveModel {
         booking_no: Set(booking_no.clone()),
         user_id: Set(body.user_id),
@@ -259,7 +246,7 @@ pub async fn create(
         .await
         .map_err(|e| AppError::Internal(format!("insert booking: {e}")))?;
 
-    // ── 6. Write back booking_id to the locked slot ───────
+    // 6. Write back booking_id to the locked slot
     if should_lock {
         let slot_id = body.slot_instance_id.unwrap();
         let slot = date_slot::Entity::find_by_id(slot_id)
@@ -275,7 +262,7 @@ pub async fn create(
         }
     }
 
-    // ── 7. Insert booking log ─────────────────────────────
+    // 7. Insert booking log
     insert_log(
         &txn,
         inserted.booking_id,
@@ -283,7 +270,7 @@ pub async fn create(
         None,
         Some(status),
         operator_id,
-        "user",
+        operator_type,
         None,
     )
     .await?;
@@ -311,7 +298,7 @@ pub async fn update(
     let mut active: booking::ActiveModel = existing.clone().into();
     apply_updates(&mut active, body);
 
-    // Detect status transition → slot release
+    // Detect status transition to slot release
     let old_status = existing.status.clone();
     let new_status = body.status.clone();
 
@@ -335,7 +322,7 @@ pub async fn update(
             .one(&txn)
             .await
             .map_err(|e| AppError::Internal(format!("lock slot: {e}")))?
-            .ok_or(AppError::NotFound("关联时段不存在".into()))?;
+            .ok_or(AppError::NotFound("linked time slot not found".into()))?;
 
         let mut slot_active: date_slot::ActiveModel = slot.into();
         slot_active.is_booked = Set(Some(0));
@@ -403,10 +390,7 @@ pub async fn delete(state: &AppState, id: i32) -> Result<(), AppError> {
     Ok(())
 }
 
-pub async fn stats(
-    state: &AppState,
-    photographer_id: Option<i32>,
-) -> Result<StatsData, AppError> {
+pub async fn stats(state: &AppState, photographer_id: Option<i32>) -> Result<StatsData, AppError> {
     use chrono::Local;
 
     let today = Local::now().format("%Y-%m-%d").to_string();
@@ -426,9 +410,7 @@ pub async fn stats(
     let today_count = base
         .clone()
         .filter(booking::Column::BookingDate.eq(&today))
-        .filter(booking::Column::Status.is_not_in(vec![
-            "cancelled", "refunded", "completed",
-        ]))
+        .filter(booking::Column::Status.is_not_in(vec!["cancelled", "refunded", "completed"]))
         .count(&state.db)
         .await
         .map_err(|e| AppError::Internal(format!("DB: {e}")))?;

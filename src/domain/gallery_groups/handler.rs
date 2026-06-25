@@ -1,19 +1,18 @@
 //! Gallery groups handlers.
 
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use validator::Validate;
 
 use crate::app_state::AppState;
 use crate::error::AppError;
 use crate::middleware::auth::AuthUser;
-use crate::util::require_admin;
 use crate::response::{ApiResponse, PaginatedData};
 
 use super::dto::{CreateReq, ListQuery, UpdateReq};
 use super::service;
 
-/// GET /gallery-groups — list gallery groups.
+/// GET /gallery-groups - list gallery groups.
 #[utoipa::path(
     get,
     path = "/gallery-groups",
@@ -30,11 +29,16 @@ pub async fn list(
     let page = q.page.unwrap_or(1);
     let ps = q.page_size.unwrap_or(20);
     let (rows, total) = service::list(&state, &q).await?;
-    let list: Vec<_> = rows.iter().map(|r| serde_json::to_value(r).unwrap()).collect();
-    Ok(Json(ApiResponse::ok(PaginatedData::new(list, total, page, ps))))
+    let list: Vec<_> = rows
+        .iter()
+        .map(|r| serde_json::to_value(r).unwrap())
+        .collect();
+    Ok(Json(ApiResponse::ok(PaginatedData::new(
+        list, total, page, ps,
+    ))))
 }
 
-/// GET /gallery-groups/{id} — read a single gallery group.
+/// GET /gallery-groups/{id} - read a single gallery group.
 #[utoipa::path(
     get,
     path = "/gallery-groups/{id}",
@@ -53,7 +57,7 @@ pub async fn read(
     Ok(Json(ApiResponse::ok(serde_json::to_value(r).unwrap())))
 }
 
-/// POST /gallery-groups — create a gallery group (admin).
+/// POST /gallery-groups - create a gallery group (provider login required).
 #[utoipa::path(
     post,
     path = "/gallery-groups",
@@ -61,7 +65,7 @@ pub async fn read(
     responses(
         (status = 200, body = ApiResponse<serde_json::Value>),
         (status = 400, description = "Input validation error"),
-        (status = 403, description = "Forbidden — admin only"),
+        (status = 403, description = "Forbidden - login required"),
     ),
     tag = "gallery-groups",
 )]
@@ -70,14 +74,13 @@ pub async fn create(
     auth: AuthUser,
     Json(body): Json<CreateReq>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
-    require_admin(&auth)?;
     body.validate()
         .map_err(|e| AppError::InputValidation(e.to_string()))?;
     let m = service::create(&state, body, auth.user_id).await?;
     Ok(Json(ApiResponse::ok(serde_json::to_value(m).unwrap())))
 }
 
-/// PUT /gallery-groups/{id} — update a gallery group (admin).
+/// PUT /gallery-groups/{id} - update a gallery group (provider login required).
 #[utoipa::path(
     put,
     path = "/gallery-groups/{id}",
@@ -85,7 +88,7 @@ pub async fn create(
     request_body = UpdateReq,
     responses(
         (status = 200, body = ApiResponse<serde_json::Value>),
-        (status = 403, description = "Forbidden — admin only"),
+        (status = 403, description = "Forbidden - login required"),
         (status = 404, description = "Not found"),
     ),
     tag = "gallery-groups",
@@ -96,28 +99,26 @@ pub async fn update(
     Path(id): Path<i32>,
     Json(body): Json<UpdateReq>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
-    require_admin(&auth)?;
     let r = service::update(&state, id, body, auth.user_id).await?;
     Ok(Json(ApiResponse::ok(serde_json::to_value(r).unwrap())))
 }
 
-/// DELETE /gallery-groups/{id} — delete a gallery group (admin).
+/// DELETE /gallery-groups/{id} - delete a gallery group (provider login required).
 #[utoipa::path(
     delete,
     path = "/gallery-groups/{id}",
     params(("id" = i32, Path, description = "Gallery group ID")),
     responses(
         (status = 200, body = ApiResponse<serde_json::Value>),
-        (status = 403, description = "Forbidden — admin only"),
+        (status = 403, description = "Forbidden - login required"),
     ),
     tag = "gallery-groups",
 )]
 pub async fn delete_one(
     State(state): State<AppState>,
-    auth: AuthUser,
+    _auth: AuthUser,
     Path(id): Path<i32>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
-    require_admin(&auth)?;
     service::delete_one(&state, id).await?;
     Ok(Json(ApiResponse::ok(())))
 }

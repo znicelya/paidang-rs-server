@@ -1,19 +1,19 @@
-//! Date settings handlers — CRUD + check. JWT-protected.
+//! Date settings handlers - CRUD + check. JWT-protected.
 
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use validator::Validate;
 
 use crate::app_state::AppState;
 use crate::error::AppError;
 use crate::middleware::auth::AuthUser;
-use crate::util::require_owner;
 use crate::response::{ApiResponse, PaginatedData};
+use crate::util::require_owner;
 
 use super::dto::*;
 use super::service;
 
-/// GET /date-settings — list date settings.
+/// GET /date-settings - list date settings.
 #[utoipa::path(
     get,
     path = "/date-settings",
@@ -31,12 +31,7 @@ pub async fn list(
 ) -> Result<Json<ApiResponse<PaginatedData<serde_json::Value>>>, AppError> {
     let page = q.page.unwrap_or(1);
     let ps = q.page_size.unwrap_or(20);
-    let pid = if auth.role >= 2 {
-        q.photographer_id
-    } else {
-        Some(auth.user_id)
-    };
-    let (rows, total) = service::list(&state, &q, pid).await?;
+    let (rows, total) = service::list(&state, &q, Some(auth.user_id)).await?;
     let list: Vec<_> = rows
         .iter()
         .map(|r| serde_json::to_value(r).unwrap())
@@ -46,7 +41,7 @@ pub async fn list(
     ))))
 }
 
-/// GET /date-settings/{id} — read a single date setting.
+/// GET /date-settings/{id} - read a single date setting.
 #[utoipa::path(
     get,
     path = "/date-settings/{id}",
@@ -69,7 +64,7 @@ pub async fn read(
     Ok(Json(ApiResponse::ok(serde_json::to_value(r).unwrap())))
 }
 
-/// POST /date-settings — create a new date setting.
+/// POST /date-settings - create a new date setting.
 #[utoipa::path(
     post,
     path = "/date-settings",
@@ -94,7 +89,7 @@ pub async fn create(
     Ok(Json(ApiResponse::ok(serde_json::to_value(m).unwrap())))
 }
 
-/// PUT /date-settings/{id} — update a date setting.
+/// PUT /date-settings/{id} - update a date setting.
 #[utoipa::path(
     put,
     path = "/date-settings/{id}",
@@ -120,7 +115,7 @@ pub async fn update(
     Ok(Json(ApiResponse::ok(serde_json::to_value(r).unwrap())))
 }
 
-/// DELETE /date-settings/{id} — delete a date setting.
+/// DELETE /date-settings/{id} - delete a date setting.
 #[utoipa::path(
     delete,
     path = "/date-settings/{id}",
@@ -144,7 +139,7 @@ pub async fn delete_one(
     Ok(Json(ApiResponse::ok(())))
 }
 
-/// GET /date-settings/check — check date availability.
+/// GET /date-settings/check - check date availability.
 #[utoipa::path(
     get,
     path = "/date-settings/check",
@@ -158,10 +153,8 @@ pub async fn delete_one(
 )]
 pub async fn check(
     State(state): State<AppState>,
-    auth: AuthUser,
     Query(q): Query<CheckQuery>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
-    require_owner(&auth, q.photographer_id)?;
     let v = service::check(&state, q.photographer_id, &q.target_date).await?;
     Ok(Json(ApiResponse::ok(v)))
 }

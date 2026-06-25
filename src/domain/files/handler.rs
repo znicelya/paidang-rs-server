@@ -1,21 +1,20 @@
-//! Files handlers — upload / list / download (proxy) / delete via COS.
+//! Files handlers - upload / list / download (proxy) / delete via COS.
 
+use axum::Json;
 use axum::body::Body;
 use axum::extract::{Multipart, Path, Query, State};
-use axum::http::{header, StatusCode};
+use axum::http::{StatusCode, header};
 use axum::response::IntoResponse;
-use axum::Json;
 
 use crate::app_state::AppState;
 use crate::error::AppError;
 use crate::middleware::auth::AuthUser;
-use crate::util::require_admin;
 use crate::response::ApiResponse;
 
 use super::dto::{DeleteQuery, ListQuery};
 use super::service;
 
-/// POST /files — multipart upload to COS, with optional Qiniu moderation.
+/// POST /files - multipart upload to COS, with optional Qiniu moderation.
 ///
 /// Fields:
 /// - `file` (required): the binary file
@@ -74,16 +73,16 @@ pub async fn upload(
         }
     }
 
-    let data = file_data.ok_or_else(|| AppError::InputValidation("未提供文件".into()))?;
+    let data = file_data.ok_or_else(|| AppError::InputValidation("missing file".into()))?;
     if data.is_empty() {
-        return Err(AppError::InputValidation("文件为空".into()));
+        return Err(AppError::InputValidation("empty file".into()));
     }
 
     let value = service::upload(&state, data, &file_name, &content_type, &prefix).await?;
     Ok(Json(ApiResponse::ok(value)))
 }
 
-/// GET /files/*path — proxy download from COS.
+/// GET /files/*path - proxy download from COS.
 #[utoipa::path(
     get,
     path = "/files/{*path}",
@@ -106,14 +105,17 @@ pub async fn download(
             (header::CONTENT_TYPE, content_type),
             (
                 header::CONTENT_DISPOSITION,
-                format!("inline; filename=\"{}\"", path.rsplit('/').next().unwrap_or(&path)),
+                format!(
+                    "inline; filename=\"{}\"",
+                    path.rsplit('/').next().unwrap_or(&path)
+                ),
             ),
         ],
         Body::from(body),
     ))
 }
 
-/// GET /files — list objects by prefix.
+/// GET /files - list objects by prefix.
 #[utoipa::path(
     get,
     path = "/files",
@@ -135,24 +137,23 @@ pub async fn list(
     Ok(Json(ApiResponse::ok(value)))
 }
 
-/// DELETE /files?key= — delete an object (admin only).
+/// DELETE /files?key= - delete an object, provider login required.
 #[utoipa::path(
     delete,
     path = "/files",
     params(DeleteQuery),
     responses(
         (status = 200, body = ApiResponse<serde_json::Value>),
-        (status = 403, description = "Forbidden — admin only"),
+        (status = 403, description = "Forbidden - login required"),
         (status = 500, description = "COS not configured"),
     ),
     tag = "files",
 )]
 pub async fn delete_file(
     State(state): State<AppState>,
-    auth: AuthUser,
+    _auth: AuthUser,
     Query(q): Query<DeleteQuery>,
 ) -> Result<Json<ApiResponse<()>>, AppError> {
-    require_admin(&auth)?;
     service::delete(&state, &q.key).await?;
     Ok(Json(ApiResponse::ok(())))
 }

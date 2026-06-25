@@ -6,8 +6,8 @@
 use std::sync::Arc;
 
 use sea_orm::{ConnectOptions, Database};
-use testcontainers::runners::AsyncRunner;
 use testcontainers::ImageExt;
+use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::mysql::Mysql;
 
 use paidang_rs_server::app_state::AppState;
@@ -30,10 +30,7 @@ pub struct TestContext {
 /// The JWT secret is fixed to "test-secret" for predictable test token generation.
 pub async fn setup() -> TestContext {
     // Try to start MySQL container; if Docker is not available, skip.
-    let container = Mysql::default()
-        .with_tag("8.4")
-        .start()
-        .await;
+    let container = Mysql::default().with_tag("8.4").start().await;
 
     let (state, container) = match container {
         Ok(container) => {
@@ -59,10 +56,19 @@ pub async fn setup() -> TestContext {
 
             let settings = config::Settings {
                 env: "test".into(),
-                server: config::ServerSettings { host: "0.0.0.0".into(), port: 9999 },
+                server: config::ServerSettings {
+                    host: "0.0.0.0".into(),
+                    port: 9999,
+                },
                 database: config::DatabaseSettings { pool_size: 5 },
-                jwt: config::JwtSettings { expires_secs: 86400 },
-                pagination: config::PaginationSettings { default_page: 1, default_page_size: 20, max_page_size: 100 },
+                jwt: config::JwtSettings {
+                    expires_secs: 86400,
+                },
+                pagination: config::PaginationSettings {
+                    default_page: 1,
+                    default_page_size: 20,
+                    max_page_size: 100,
+                },
                 database_url: Some(db_url),
                 jwt_secret: Some("test-secret".into()),
                 wechat_appid: None,
@@ -78,7 +84,7 @@ pub async fn setup() -> TestContext {
             (Some(state), Some(container))
         }
         Err(e) => {
-            // Docker not available — panic with helpful message
+            // Docker is not available; panic with a helpful message.
             panic!("MySQL container could not be started: {e}. Is Docker running?")
         }
     };
@@ -92,15 +98,14 @@ pub async fn setup() -> TestContext {
     }
 }
 
-/// Generate a valid JWT for the given user_id and role.
+/// Generate a valid JWT for the given provider user_id.
 #[allow(dead_code)]
-pub fn test_jwt(user_id: i32, role: i8, secret: &str) -> String {
+pub fn test_jwt(user_id: i32, secret: &str) -> String {
     use jsonwebtoken::{EncodingKey, Header};
     let now = chrono::Utc::now();
     let claims = auth::Claims {
         sub: user_id,
         openid: format!("test-openid-{user_id}"),
-        role,
         exp: (now + chrono::Duration::hours(1)).timestamp() as u64,
     };
     jsonwebtoken::encode(
@@ -113,12 +118,11 @@ pub fn test_jwt(user_id: i32, role: i8, secret: &str) -> String {
 
 /// Generate an expired JWT.
 #[allow(dead_code)]
-pub fn expired_jwt(user_id: i32, role: i8, secret: &str) -> String {
+pub fn expired_jwt(user_id: i32, secret: &str) -> String {
     use jsonwebtoken::{EncodingKey, Header};
     let claims = auth::Claims {
         sub: user_id,
         openid: format!("test-openid-{user_id}"),
-        role,
         exp: (chrono::Utc::now() - chrono::Duration::hours(1)).timestamp() as u64,
     };
     jsonwebtoken::encode(

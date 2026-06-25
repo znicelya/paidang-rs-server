@@ -25,7 +25,7 @@ async fn seed_photographer(ctx: &common::TestContext) -> i32 {
     m.user_id
 }
 
-// ── Creation with validation ─────────────────────────────────
+// Creation with validation.
 
 #[tokio::test]
 async fn create_booking_success() {
@@ -44,13 +44,15 @@ async fn create_booking_success() {
         deposit_amount: Some(2000),
         paid_amount: Some(0),
         status: Some("pending".into()),
-        customer_name: "张三".into(),
+        customer_name: "CustomerA".into(),
         customer_phone: "13800138000".into(),
         customer_remark: None,
         photographer_remark: None,
     };
 
-    let result = service::create(&ctx.state, &body, Some(pid)).await.unwrap();
+    let result = service::create(&ctx.state, &body, None, "customer")
+        .await
+        .unwrap();
     assert!(result.booking_id > 0);
     assert!(result.booking_no.starts_with("BK"));
 
@@ -64,6 +66,8 @@ async fn create_booking_success() {
     assert_eq!(logs.len(), 1);
     assert_eq!(logs[0].action, "created");
     assert_eq!(logs[0].to_status.as_deref(), Some("pending"));
+    assert_eq!(logs[0].operator_id, None);
+    assert_eq!(logs[0].operator_type.as_deref(), Some("customer"));
 }
 
 #[tokio::test]
@@ -83,27 +87,32 @@ async fn create_booking_conflict_detected() {
         deposit_amount: None,
         paid_amount: None,
         status: None,
-        customer_name: "李四".into(),
+        customer_name: "CustomerB".into(),
         customer_phone: "13900139000".into(),
         customer_remark: None,
         photographer_remark: None,
     };
 
     // First booking succeeds
-    service::create(&ctx.state, &body, Some(pid)).await.unwrap();
+    service::create(&ctx.state, &body, Some(pid), "provider")
+        .await
+        .unwrap();
 
     // Overlapping booking should fail
     let conflict = CreateBookingRequest {
         start_time: "15:00".into(),
         end_time: "17:00".into(),
-        customer_name: "王五".into(),
+        customer_name: "CustomerConflict".into(),
         customer_phone: "13700137000".into(),
         ..body.clone()
     };
-    let result = service::create(&ctx.state, &conflict, Some(pid)).await;
+    let result = service::create(&ctx.state, &conflict, Some(pid), "provider").await;
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
-    assert!(err.contains("冲突"), "expected conflict error, got: {err}");
+    assert!(
+        err.contains("conflicts"),
+        "expected conflict error, got: {err}"
+    );
 }
 
 #[tokio::test]
@@ -136,21 +145,24 @@ async fn create_booking_full_day_block() {
         deposit_amount: None,
         paid_amount: None,
         status: None,
-        customer_name: "赵六".into(),
+        customer_name: "CustomerBlocked".into(),
         customer_phone: "13600136000".into(),
         customer_remark: None,
         photographer_remark: None,
     };
 
-    let result = service::create(&ctx.state, &body, Some(pid)).await;
+    let result = service::create(&ctx.state, &body, Some(pid), "provider").await;
     assert!(result.is_err());
     assert!(
-        result.unwrap_err().to_string().contains("全天不可约"),
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("unavailable for the full day"),
         "expected full-day block error"
     );
 }
 
-// ── List with pagination ─────────────────────────────────────
+// List with pagination.
 
 #[tokio::test]
 async fn list_bookings_pagination() {
@@ -176,7 +188,9 @@ async fn list_bookings_pagination() {
             customer_remark: None,
             photographer_remark: None,
         };
-        service::create(&ctx.state, &body, Some(pid)).await.unwrap();
+        service::create(&ctx.state, &body, Some(pid), "provider")
+            .await
+            .unwrap();
     }
 
     let query = BookingListQuery {
@@ -186,22 +200,27 @@ async fn list_bookings_pagination() {
         status: Some("pending".into()),
         booking_date: None,
     };
-    let (rows, total) = service::list(&ctx.state, &query, Some(pid), 1).await.unwrap();
+    let (rows, total) = service::list(&ctx.state, &query, pid).await.unwrap();
     assert_eq!(total, 3);
     assert_eq!(rows.len(), 3);
 }
 
-// ── Read ─────────────────────────────────────────────────────
+// Read.
 
 #[tokio::test]
 async fn read_booking_not_found() {
     let ctx = setup().await;
     let result = service::read(&ctx.state, 99999).await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("不存在"));
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("booking not found")
+    );
 }
 
-// ── Status change + booking log ──────────────────────────────
+// Status change and booking log.
 
 #[tokio::test]
 async fn update_status_writes_log() {
@@ -220,12 +239,14 @@ async fn update_status_writes_log() {
         deposit_amount: None,
         paid_amount: None,
         status: Some("pending".into()),
-        customer_name: "状态测试".into(),
+        customer_name: "CustomerStatus".into(),
         customer_phone: "13500135000".into(),
         customer_remark: None,
         photographer_remark: None,
     };
-    let created = service::create(&ctx.state, &body, Some(pid)).await.unwrap();
+    let created = service::create(&ctx.state, &body, Some(pid), "provider")
+        .await
+        .unwrap();
 
     // Update status to confirmed
     let update = UpdateBookingRequest {
@@ -250,7 +271,7 @@ async fn update_status_writes_log() {
     assert!(actions.contains(&"status_change".to_string()));
 }
 
-// ── Stats ────────────────────────────────────────────────────
+// Stats.
 
 #[tokio::test]
 async fn stats_returns_counts() {
@@ -274,13 +295,15 @@ async fn stats_returns_counts() {
         customer_remark: None,
         photographer_remark: None,
     };
-    service::create(&ctx.state, &body, Some(pid)).await.unwrap();
+    service::create(&ctx.state, &body, Some(pid), "provider")
+        .await
+        .unwrap();
 
     let stats = service::stats(&ctx.state, Some(pid)).await.unwrap();
     assert!(stats.pending >= 1);
 }
 
-// ── Delete ───────────────────────────────────────────────────
+// Delete.
 
 #[tokio::test]
 async fn delete_booking_removes_record() {
@@ -304,10 +327,73 @@ async fn delete_booking_removes_record() {
         customer_remark: None,
         photographer_remark: None,
     };
-    let created = service::create(&ctx.state, &body, Some(pid)).await.unwrap();
+    let created = service::create(&ctx.state, &body, Some(pid), "provider")
+        .await
+        .unwrap();
 
-    service::delete(&ctx.state, created.booking_id).await.unwrap();
+    service::delete(&ctx.state, created.booking_id)
+        .await
+        .unwrap();
 
     let result = service::read(&ctx.state, created.booking_id).await;
     assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn list_bookings_ignores_query_photographer_and_scopes_to_provider() {
+    let ctx = setup().await;
+    let pid_a = seed_photographer(&ctx).await;
+    let pid_b = {
+        use paidang_rs_server::entity::user;
+        use sea_orm::{ActiveModelTrait, Set};
+        user::ActiveModel {
+            openid: Set("wx-photographer-b".into()),
+            role: Set(2),
+            status: Set(1),
+            ..Default::default()
+        }
+        .insert(&ctx.state.db)
+        .await
+        .unwrap()
+        .user_id
+    };
+
+    for (pid, name, date) in [
+        (pid_a, "Scoped A", "2026-09-01"),
+        (pid_b, "Scoped B", "2026-09-02"),
+    ] {
+        let body = CreateBookingRequest {
+            photographer_id: pid,
+            user_id: None,
+            slot_instance_id: None,
+            package_id: None,
+            booking_date: date.into(),
+            start_time: "10:00".into(),
+            end_time: "11:00".into(),
+            total_amount: None,
+            deposit_amount: None,
+            paid_amount: None,
+            status: Some("pending".into()),
+            customer_name: name.into(),
+            customer_phone: format!("13800000{pid:03}"),
+            customer_remark: None,
+            photographer_remark: None,
+        };
+        service::create(&ctx.state, &body, Some(pid), "provider")
+            .await
+            .unwrap();
+    }
+
+    let query = BookingListQuery {
+        page: Some(1),
+        page_size: Some(10),
+        photographer_id: Some(pid_b),
+        status: None,
+        booking_date: None,
+    };
+
+    let (rows, total) = service::list(&ctx.state, &query, pid_a).await.unwrap();
+    assert_eq!(total, 1);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].photographer_id, pid_a);
 }

@@ -8,8 +8,8 @@ use utoipa::OpenApi;
 use crate::domain::auth::dto;
 use crate::domain::bookings::dto as bookings_dto;
 use crate::domain::packages::dto as packages_dto;
-use crate::response;
 use crate::error;
+use crate::response;
 
 /// Top-level OpenAPI document.
 ///
@@ -18,7 +18,7 @@ use crate::error;
 #[openapi(
     info(
         title = "paidang-rs-server",
-        description = "Self-hosted Rust rewrite of paidang-worker-server — axum + SeaORM + MySQL + Tencent COS",
+        description = "Self-hosted Rust rewrite of paidang-worker-server - axum + SeaORM + MySQL + Tencent COS",
         version = "0.1.0",
     ),
     components(
@@ -36,9 +36,9 @@ use crate::error;
     tags(
         (name = "auth", description = "Authentication (WeChat login + JWT)"),
         (name = "user", description = "User profile read/update"),
-        (name = "packages", description = "Photography packages (read public, write admin)"),
-        (name = "gallery-groups", description = "Gallery groups (read public, write admin)"),
-        (name = "gallery", description = "Gallery images/media (read public, write admin)"),
+        (name = "packages", description = "Photography packages (read public, write provider)"),
+        (name = "gallery-groups", description = "Gallery groups (read public, write provider)"),
+        (name = "gallery", description = "Gallery images/media (read public, write provider)"),
         (name = "time-slot-templates", description = "Time slot templates (photographer-owned)"),
         (name = "date-slots", description = "Date slot instances (photographer-owned)"),
         (name = "date-settings", description = "Date availability settings (photographer-owned)"),
