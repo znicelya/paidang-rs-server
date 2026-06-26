@@ -24,7 +24,7 @@ pub async fn list(
         s = s.filter(gallery::Column::GroupId.eq(gid));
     }
     if let Some(pid) = q.photographer_id {
-        s = s.filter(gallery::Column::PhotographerId.eq(pid));
+        s = s.filter(gallery::Column::CreateBy.eq(pid));
     }
     let total = s
         .clone()
