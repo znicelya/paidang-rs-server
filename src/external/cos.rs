@@ -1,7 +1,7 @@
-//! Tencent Cloud COS client via reqwest + CAM V4 signing.
+//! Tencent Cloud COS client via reqwest + COS XML API V5 signing.
 //!
-//! Uses HMAC-SHA1 signing (compatible with COS XML API).
-//! In production, prefer `qcos` crate — this is the fallback per spec §7.3.
+//! In production, prefer `qcos` crate; this fallback signs requests directly
+//! for the COS XML API.
 
 use crate::error::AppError;
 use reqwest::Client;
@@ -56,7 +56,7 @@ impl CosClient {
     }
 
     fn object_url(&self, key: &str) -> String {
-        format!("https://{}/{}", self.host(), key.trim_start_matches('/'))
+        format!("https://{}{}", self.host(), self.resource_path(key))
     }
 
     /// PUT an object. `content_type` should be inferred from the file.
@@ -69,33 +69,19 @@ impl CosClient {
     ) -> Result<String, AppError> {
         let url = self.object_url(key);
         let now = chrono::Utc::now();
+        let start = now.timestamp();
+        let end = start + 3600;
         let date_str = now.format("%a, %d %b %Y %H:%M:%S GMT").to_string();
-
-        // Build signature
-        let string_to_sign = format!(
-            "put\n\n{}\n{}\n/{}",
-            content_type,
-            date_str,
-            self.resource_path(key)
-        );
-        let signature = self.sign(&string_to_sign);
+        let host = self.host();
+        let authorization = self.authorization("put", key, content_type, &date_str, start, end);
 
         let resp = self
             .http
             .put(&url)
-            .header("Host", self.host())
+            .header("Host", &host)
             .header("Date", &date_str)
             .header("Content-Type", content_type)
-            .header(
-                "Authorization",
-                format!(
-                    "q-sign-algorithm=sha1&q-ak={}&q-sign-time={}&q-key-time={}&q-header-list=host;date;content-type&q-url-param-list=&q-signature={}",
-                    self.config.secret_id,
-                    now.timestamp(),
-                    now.timestamp() + 3600,
-                    signature,
-                ),
-            )
+            .header("Authorization", authorization)
             .body(body)
             .send()
             .await
@@ -104,9 +90,7 @@ impl CosClient {
         let status = resp.status();
         if !status.is_success() {
             let text = resp.text().await.unwrap_or_default();
-            return Err(AppError::External(format!(
-                "COS {status}: {text}"
-            )));
+            return Err(AppError::External(format!("COS {status}: {text}")));
         }
         Ok(url)
     }
@@ -139,7 +123,7 @@ impl CosClient {
         Ok((body, ct))
     }
 
-    /// HEAD object — returns content-type and content-length.
+    /// HEAD object returns content-type and content-length.
     pub async fn head_object(&self, key: &str) -> Result<(String, u64), AppError> {
         let url = self.object_url(key);
         let resp = self
@@ -184,11 +168,8 @@ impl CosClient {
         Ok(())
     }
 
-    /// List objects with a prefix (max 1000).
-    pub async fn list_objects(
-        &self,
-        prefix: &str,
-    ) -> Result<Vec<String>, AppError> {
+    /// List objects by prefix (max 1000).
+    pub async fn list_objects(&self, prefix: &str) -> Result<Vec<String>, AppError> {
         let url = format!(
             "https://{}/?prefix={}&max-keys=1000",
             self.host(),
@@ -209,7 +190,6 @@ impl CosClient {
             .text()
             .await
             .map_err(|e| AppError::External(format!("COS list body: {e}")))?;
-        // Simple XML parse — just extract <Key> elements
         let mut keys = Vec::new();
         for cap in body.split("<Key>").skip(1) {
             if let Some(end) = cap.find("</Key>") {
@@ -219,22 +199,136 @@ impl CosClient {
         Ok(keys)
     }
 
-    // ── private helpers ─────────────────────────────────
-
     fn resource_path(&self, key: &str) -> String {
-        format!("/{}", key.trim_start_matches('/'))
+        canonical_uri_path(key)
+    }
+
+    fn authorization(
+        &self,
+        method: &str,
+        key: &str,
+        content_type: &str,
+        date_str: &str,
+        start: i64,
+        end: i64,
+    ) -> String {
+        let sign_time = format!("{start};{end}");
+        let key_time = sign_time.clone();
+        let host = self.host();
+        let header_list = "content-type;date;host";
+        let http_string = format!(
+            "{}\n{}\n\ncontent-type={}&date={}&host={}\n",
+            method.to_ascii_lowercase(),
+            self.resource_path(key),
+            percent_encode(content_type),
+            percent_encode(date_str),
+            percent_encode(&host),
+        );
+        let string_to_sign = format!("sha1\n{sign_time}\n{}\n", sha1_hex(http_string.as_bytes()));
+        let sign_key = hmac_sha1_hex(self.config.secret_key.as_bytes(), &key_time);
+        let signature = hmac_sha1_hex(sign_key.as_bytes(), &string_to_sign);
+
+        format!(
+            "q-sign-algorithm=sha1&q-ak={}&q-sign-time={}&q-key-time={}&q-header-list={}&q-url-param-list=&q-signature={}",
+            self.config.secret_id, sign_time, key_time, header_list, signature
+        )
     }
 
     fn sign(&self, input: &str) -> String {
-        use base64::Engine;
-        use hmac::{Hmac, Mac};
-        use sha1::Sha1;
-        type HmacSha1 = Hmac<Sha1>;
-        let mut mac =
-            HmacSha1::new_from_slice(self.config.secret_key.as_bytes())
-                .expect("HMAC-SHA1 key");
-        mac.update(input.as_bytes());
-        let result = mac.finalize();
-        base64::engine::general_purpose::STANDARD.encode(result.into_bytes())
+        hmac_sha1_hex(self.config.secret_key.as_bytes(), input)
+    }
+}
+
+fn canonical_uri_path(key: &str) -> String {
+    let key = key.trim_start_matches('/');
+    if key.is_empty() {
+        return "/".to_string();
+    }
+    let path = key
+        .split('/')
+        .map(percent_encode)
+        .collect::<Vec<_>>()
+        .join("/");
+    format!("/{path}")
+}
+
+fn percent_encode(input: &str) -> String {
+    let mut encoded = String::with_capacity(input.len());
+    for byte in input.as_bytes() {
+        match *byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(*byte as char)
+            }
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
+}
+
+fn sha1_hex(input: &[u8]) -> String {
+    use sha1::{Digest, Sha1};
+
+    let mut hasher = Sha1::new();
+    hasher.update(input);
+    to_hex(&hasher.finalize())
+}
+
+fn hmac_sha1_hex(key: &[u8], input: &str) -> String {
+    use hmac::{Hmac, Mac};
+    use sha1::Sha1;
+
+    type HmacSha1 = Hmac<Sha1>;
+    let mut mac = HmacSha1::new_from_slice(key).expect("HMAC-SHA1 key");
+    mac.update(input.as_bytes());
+    to_hex(&mac.finalize().into_bytes())
+}
+
+fn to_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CosClient, CosConfig};
+
+    fn client() -> CosClient {
+        CosClient::new(CosConfig {
+            secret_id: "secret-id".into(),
+            secret_key: "secret-key".into(),
+            bucket: "bucket-123".into(),
+            region: "ap-guangzhou".into(),
+        })
+    }
+
+    #[test]
+    fn cos_authorization_uses_time_ranges() {
+        let authorization = client().authorization(
+            "put",
+            "avatars/1_1782384655469.jpeg",
+            "image/jpeg",
+            "Thu, 25 Jun 2026 10:50:55 GMT",
+            1782384655,
+            1782388255,
+        );
+
+        assert!(authorization.contains("q-sign-time=1782384655;1782388255"));
+        assert!(authorization.contains("q-key-time=1782384655;1782388255"));
+        assert!(authorization.contains("q-header-list=content-type;date;host"));
+        let signature = authorization
+            .rsplit_once("q-signature=")
+            .map(|(_, signature)| signature)
+            .unwrap();
+        assert_eq!(signature.len(), 40);
+        assert!(signature.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(signature.chars().all(|c| !c.is_ascii_uppercase()));
+    }
+
+    #[test]
+    fn cos_signature_is_lowercase_hex_hmac_sha1() {
+        let signature = client().sign("test-signing-input");
+
+        assert_eq!(signature.len(), 40);
+        assert!(signature.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(signature.chars().all(|c| !c.is_ascii_uppercase()));
     }
 }
