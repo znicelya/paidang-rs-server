@@ -53,6 +53,19 @@ impl AppError {
     pub fn internal(msg: impl Into<String>) -> Self {
         Self::Internal(msg.into())
     }
+
+    /// Map a SeaORM DB error, translating known constraint violations into
+    /// user-facing validation messages instead of leaking raw SQL errors.
+    pub fn from_db(e: sea_orm::DbErr) -> Self {
+        let s = e.to_string();
+        if s.contains("1062") || s.contains("Duplicate entry") {
+            if s.contains("uq_dateslot") {
+                return Self::InputValidation("该日期的此时间段已存在，请勿重复添加".into());
+            }
+            return Self::InputValidation("记录已存在，请勿重复添加".into());
+        }
+        Self::Internal(format!("DB:{s}"))
+    }
 }
 
 impl IntoResponse for AppError {

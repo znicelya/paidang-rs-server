@@ -70,7 +70,7 @@ pub async fn create(state: &AppState, body: CreateReq) -> Result<date_slot::Mode
     }
     .insert(&state.db)
     .await
-    .map_err(|e| AppError::Internal(format!("DB:{e}")))?;
+    .map_err(AppError::from_db)?;
     Ok(m)
 }
 
@@ -110,7 +110,7 @@ pub async fn update(
     let r = a
         .update(&state.db)
         .await
-        .map_err(|e| AppError::Internal(format!("DB:{e}")))?;
+        .map_err(AppError::from_db)?;
     Ok(r)
 }
 
