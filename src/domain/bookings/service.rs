@@ -25,6 +25,9 @@ use super::dto::{CreateBookingData, CreateBookingRequest, StatsData, UpdateBooki
 /// The possible "old statuses" for which a slot release is valid (spec 4.2).
 const LOCKED_STATUSES: &[&str] = &["pending", "confirmed", "in_progress"];
 const RELEASE_STATUSES: &[&str] = &["cancelled", "refunded", "completed"];
+/// Release statuses that mean the booking was cancelled: the slot created for it
+/// is removed from the schedule entirely (rather than freed for re-booking).
+const CANCEL_STATUSES: &[&str] = &["cancelled", "refunded"];
 
 /// Generate a booking number matching the existing format: `BK<timestamp_ms><random6>`.
 fn generate_booking_no() -> String {
@@ -377,13 +380,28 @@ pub async fn update(
             .map_err(|e| AppError::Internal(format!("lock slot: {e}")))?
             .ok_or(AppError::NotFound("linked time slot not found".into()))?;
 
-        let mut slot_active: date_slot::ActiveModel = slot.into();
-        slot_active.is_booked = Set(Some(0));
-        slot_active.booking_id = Set(None);
-        slot_active
-            .update(&txn)
-            .await
-            .map_err(|e| AppError::Internal(format!("release slot: {e}")))?;
+        // 取消/退款：删除为该预约新建的日程，并解除预约对它的引用；
+        // 其他释放（如 completed）：保留日程，仅标记为可预约。
+        let is_cancellation = new_status
+            .as_deref()
+            .map(|s| CANCEL_STATUSES.contains(&s))
+            .unwrap_or(false);
+
+        if is_cancellation {
+            date_slot::Entity::delete_by_id(slot_id)
+                .exec(&txn)
+                .await
+                .map_err(|e| AppError::Internal(format!("remove slot: {e}")))?;
+            active.slot_instance_id = Set(None);
+        } else {
+            let mut slot_active: date_slot::ActiveModel = slot.into();
+            slot_active.is_booked = Set(Some(0));
+            slot_active.booking_id = Set(None);
+            slot_active
+                .update(&txn)
+                .await
+                .map_err(|e| AppError::Internal(format!("release slot: {e}")))?;
+        }
 
         active.cancel_time = Set(Some(Utc::now().naive_utc()));
         active
