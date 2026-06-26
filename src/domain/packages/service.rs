@@ -69,10 +69,10 @@ pub async fn create_package(
         suitable_people: Set(body.suitable_people.clone()),
         shooting_location: Set(body.shooting_location.clone()),
         validity_days: Set(body.validity_days),
-        sort_order: Set(body.sort_order),
-        is_hot: Set(body.is_hot),
-        is_recommend: Set(body.is_recommend),
-        status: Set(body.status),
+        sort_order: Set(body.sort_order.or(Some(0))),
+        is_hot: Set(body.is_hot.or(Some(0))),
+        is_recommend: Set(body.is_recommend.or(Some(0))),
+        status: Set(body.status.or(Some(1))),
         create_by: Set(Some(user_id)),
         update_by: Set(Some(user_id)),
         ..Default::default()
@@ -147,8 +147,8 @@ pub async fn create_item(
         quantity: Set(body.quantity),
         unit: Set(body.unit.clone()),
         item_value: Set(body.item_value.clone()),
-        sort_order: Set(body.sort_order),
-        is_default: Set(body.is_default),
+        sort_order: Set(body.sort_order.or(Some(0))),
+        is_default: Set(body.is_default.or(Some(0))),
         ..Default::default()
     }
     .insert(&state.db)
@@ -216,7 +216,7 @@ pub async fn create_gallery(
         image_url: Set(body.image_url.clone()),
         image_type: Set(body.image_type.clone()),
         caption: Set(body.caption.clone()),
-        sort_order: Set(body.sort_order),
+        sort_order: Set(body.sort_order.or(Some(0))),
         ..Default::default()
     }
     .insert(&state.db)
