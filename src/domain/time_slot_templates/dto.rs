@@ -1,8 +1,7 @@
 //! Time slot templates DTOs.
 
-use serde::de::{self, Visitor};
-use serde::{Deserialize, Deserializer};
-use std::fmt;
+use crate::util::deserialize_optional_i8;
+use serde::Deserialize;
 use utoipa::ToSchema;
 use validator::{Validate, ValidationError};
 
@@ -16,87 +15,6 @@ fn valid_time_format(s: &str) -> Result<(), ValidationError> {
     }
 }
 
-fn deserialize_optional_i8_flag<'de, D>(deserializer: D) -> Result<Option<i8>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    struct OptionalFlagVisitor;
-
-    impl<'de> Visitor<'de> for OptionalFlagVisitor {
-        type Value = Option<i8>;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("a boolean, tinyint, numeric string, or null")
-        }
-
-        fn visit_none<E>(self) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            Ok(None)
-        }
-
-        fn visit_unit<E>(self) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            Ok(None)
-        }
-
-        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            deserializer.deserialize_any(FlagVisitor).map(Some)
-        }
-    }
-
-    struct FlagVisitor;
-
-    impl Visitor<'_> for FlagVisitor {
-        type Value = i8;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("a boolean or tinyint")
-        }
-
-        fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            Ok(if value { 1 } else { 0 })
-        }
-
-        fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            i8::try_from(value).map_err(|_| E::custom("tinyint out of range"))
-        }
-
-        fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            i8::try_from(value).map_err(|_| E::custom("tinyint out of range"))
-        }
-
-        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            match value {
-                "true" => Ok(1),
-                "false" => Ok(0),
-                _ => value
-                    .parse::<i8>()
-                    .map_err(|_| E::custom("invalid tinyint flag")),
-            }
-        }
-    }
-
-    deserializer.deserialize_option(OptionalFlagVisitor)
-}
 #[derive(Debug, Deserialize, Validate, ToSchema)]
 pub struct CreateReq {
     #[validate(length(min = 1))]
@@ -106,8 +24,9 @@ pub struct CreateReq {
     #[validate(custom(function = "valid_time_format"))]
     pub end_time: String,
     pub sort_order: Option<i32>,
-    #[serde(default, deserialize_with = "deserialize_optional_i8_flag")]
+    #[serde(default, deserialize_with = "deserialize_optional_i8")]
     pub is_default: Option<i8>,
+    #[serde(default, deserialize_with = "deserialize_optional_i8")]
     pub status: Option<i8>,
 }
 
@@ -117,8 +36,9 @@ pub struct UpdateReq {
     pub start_time: Option<String>,
     pub end_time: Option<String>,
     pub sort_order: Option<i32>,
-    #[serde(default, deserialize_with = "deserialize_optional_i8_flag")]
+    #[serde(default, deserialize_with = "deserialize_optional_i8")]
     pub is_default: Option<i8>,
+    #[serde(default, deserialize_with = "deserialize_optional_i8")]
     pub status: Option<i8>,
 }
 

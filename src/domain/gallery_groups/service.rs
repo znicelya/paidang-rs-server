@@ -1,7 +1,7 @@
 //! Gallery groups service.
 
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+    ActiveModelTrait, ColumnTrait, Condition, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
     QuerySelect, Set,
 };
 
@@ -11,15 +11,30 @@ use crate::error::AppError;
 
 use super::dto::{CreateReq, ListQuery, UpdateReq};
 
-/// List gallery groups with pagination, filtered to visible status.
+/// List gallery groups with pagination, applying optional filters.
 pub async fn list(
     state: &AppState,
     q: &ListQuery,
 ) -> Result<(Vec<gallery_group::Model>, u64), AppError> {
     let page = q.page.unwrap_or(1);
     let ps = q.page_size.unwrap_or(20);
-    let s = gallery_group::Entity::find()
-        .filter(gallery_group::Column::Status.eq(1));
+    let mut s = gallery_group::Entity::find();
+    if let Some(v) = q.create_by {
+        s = s.filter(gallery_group::Column::CreateBy.eq(v));
+    }
+    if let Some(v) = q.status {
+        s = s.filter(gallery_group::Column::Status.eq(v));
+    }
+    if let Some(v) = q.is_visible {
+        s = s.filter(gallery_group::Column::IsVisible.eq(v));
+    }
+    if let Some(kw) = q.keyword.as_deref().filter(|k| !k.is_empty()) {
+        s = s.filter(
+            Condition::any()
+                .add(gallery_group::Column::Name.contains(kw))
+                .add(gallery_group::Column::Description.contains(kw)),
+        );
+    }
     let total = s
         .clone()
         .count(&state.db)
@@ -27,6 +42,7 @@ pub async fn list(
         .map_err(|e| AppError::Internal(format!("DB:{e}")))?;
     let rows = s
         .order_by_asc(gallery_group::Column::SortOrder)
+        .order_by_desc(gallery_group::Column::GroupId)
         .offset(((page - 1) * ps) as u64)
         .limit(ps)
         .all(&state.db)
@@ -54,9 +70,9 @@ pub async fn create(
         name: Set(body.name),
         cover_image: Set(body.cover_image),
         description: Set(body.description),
-        sort_order: Set(body.sort_order),
-        is_visible: Set(body.is_visible),
-        status: Set(body.status),
+        sort_order: Set(body.sort_order.or(Some(0))),
+        is_visible: Set(body.is_visible.or(Some(1))),
+        status: Set(body.status.or(Some(1))),
         create_by: Set(Some(user_id)),
         update_by: Set(Some(user_id)),
         ..Default::default()

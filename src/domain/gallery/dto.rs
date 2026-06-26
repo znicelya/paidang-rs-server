@@ -1,5 +1,6 @@
 //! Gallery DTOs.
 
+use crate::util::deserialize_optional_i8;
 use serde::Deserialize;
 use utoipa::ToSchema;
 use validator::Validate;
@@ -26,7 +27,9 @@ pub struct CreateGalleryReq {
     pub height: Option<i32>,
     pub file_size: Option<i32>,
     pub sort_order: Option<i32>,
+    #[serde(default, deserialize_with = "deserialize_optional_i8")]
     pub is_cover: Option<i8>,
+    #[serde(default, deserialize_with = "deserialize_optional_i8")]
     pub status: Option<i8>,
 }
 
@@ -49,7 +52,9 @@ pub struct UpdateGalleryReq {
     pub height: Option<i32>,
     pub file_size: Option<i32>,
     pub sort_order: Option<i32>,
+    #[serde(default, deserialize_with = "deserialize_optional_i8")]
     pub is_cover: Option<i8>,
+    #[serde(default, deserialize_with = "deserialize_optional_i8")]
     pub status: Option<i8>,
 }
 
@@ -59,6 +64,7 @@ pub struct GalleryListQuery {
     pub page_size: Option<u64>,
     pub group_id: Option<i32>,
     pub photographer_id: Option<i32>,
+    #[serde(default, deserialize_with = "deserialize_optional_i8")]
     pub status: Option<i8>,
 }
 
@@ -84,4 +90,26 @@ pub struct TagListQuery {
     pub page: Option<u64>,
     pub page_size: Option<u64>,
     pub tag_type: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CreateGalleryReq, UpdateGalleryReq};
+
+    #[test]
+    fn gallery_reqs_accept_boolean_i8_flags() {
+        let create_body = serde_json::json!({
+            "title": "Cover",
+            "is_cover": true,
+            "status": false
+        });
+        let create_req: CreateGalleryReq = serde_json::from_value(create_body).unwrap();
+        assert_eq!(create_req.is_cover, Some(1));
+        assert_eq!(create_req.status, Some(0));
+
+        let update_body = serde_json::json!({ "is_cover": false, "status": true });
+        let update_req: UpdateGalleryReq = serde_json::from_value(update_body).unwrap();
+        assert_eq!(update_req.is_cover, Some(0));
+        assert_eq!(update_req.status, Some(1));
+    }
 }

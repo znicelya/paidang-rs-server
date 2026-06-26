@@ -116,6 +116,157 @@ async fn create_booking_conflict_detected() {
 }
 
 #[tokio::test]
+async fn create_booking_without_slot_creates_schedule_slot() {
+    let ctx = setup().await;
+    let pid = seed_photographer(&ctx).await;
+
+    let body = CreateBookingRequest {
+        photographer_id: pid,
+        user_id: None,
+        slot_instance_id: None,
+        package_id: None,
+        booking_date: "2026-08-03".into(),
+        start_time: "10:00".into(),
+        end_time: "11:00".into(),
+        total_amount: None,
+        deposit_amount: None,
+        paid_amount: None,
+        status: Some("pending".into()),
+        customer_name: "Schedule Customer".into(),
+        customer_phone: "13800138001".into(),
+        customer_remark: None,
+        photographer_remark: None,
+    };
+
+    let created = service::create(&ctx.state, &body, None, "customer")
+        .await
+        .unwrap();
+
+    use paidang_rs_server::entity::{booking, date_slot};
+    let booking = booking::Entity::find_by_id(created.booking_id)
+        .one(&ctx.state.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(booking.slot_instance_id.is_some());
+
+    let slot = date_slot::Entity::find()
+        .filter(date_slot::Column::BookingId.eq(created.booking_id))
+        .one(&ctx.state.db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(booking.slot_instance_id, Some(slot.slot_instance_id));
+    assert_eq!(slot.photographer_id, pid);
+    assert_eq!(slot.slot_date, "2026-08-03");
+    assert_eq!(slot.start_time, "10:00");
+    assert_eq!(slot.end_time, "11:00");
+    assert_eq!(slot.is_booked, Some(1));
+    assert_eq!(slot.booking_id, Some(created.booking_id));
+}
+
+#[tokio::test]
+async fn create_booking_rejects_existing_manual_schedule_slot_for_same_time() {
+    let ctx = setup().await;
+    let pid = seed_photographer(&ctx).await;
+
+    use paidang_rs_server::entity::date_slot;
+    use sea_orm::{ActiveModelTrait, Set};
+    let existing_slot = date_slot::ActiveModel {
+        photographer_id: Set(pid),
+        slot_date: Set("2026-08-04".into()),
+        slot_name: Set("Manual schedule".into()),
+        start_time: Set("14:00".into()),
+        end_time: Set("15:00".into()),
+        is_booked: Set(Some(0)),
+        status: Set(Some(1)),
+        ..Default::default()
+    }
+    .insert(&ctx.state.db)
+    .await
+    .unwrap();
+
+    let body = CreateBookingRequest {
+        photographer_id: pid,
+        user_id: None,
+        slot_instance_id: None,
+        package_id: None,
+        booking_date: "2026-08-04".into(),
+        start_time: "14:00".into(),
+        end_time: "15:00".into(),
+        total_amount: None,
+        deposit_amount: None,
+        paid_amount: None,
+        status: Some("pending".into()),
+        customer_name: "Blocked Slot Customer".into(),
+        customer_phone: "13800138002".into(),
+        customer_remark: None,
+        photographer_remark: None,
+    };
+
+    let result = service::create(&ctx.state, &body, None, "customer").await;
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("unavailable"),
+        "expected unavailable slot error, got: {err}"
+    );
+
+    date_slot::ActiveModel {
+        photographer_id: Set(pid),
+        slot_date: Set("2026-08-05".into()),
+        slot_name: Set("Overlapping manual schedule".into()),
+        start_time: Set("10:30".into()),
+        end_time: Set("11:30".into()),
+        is_booked: Set(Some(0)),
+        status: Set(Some(1)),
+        ..Default::default()
+    }
+    .insert(&ctx.state.db)
+    .await
+    .unwrap();
+    let overlapping_body = CreateBookingRequest {
+        booking_date: "2026-08-05".into(),
+        start_time: "10:00".into(),
+        end_time: "11:00".into(),
+        customer_name: "Overlapping Slot Customer".into(),
+        customer_phone: "13800138004".into(),
+        ..body.clone()
+    };
+    let result = service::create(&ctx.state, &overlapping_body, None, "customer").await;
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("unavailable"),
+        "expected unavailable slot error, got: {err}"
+    );
+
+    let stale_client_body = CreateBookingRequest {
+        slot_instance_id: Some(existing_slot.slot_instance_id),
+        customer_name: "Stale Client Customer".into(),
+        customer_phone: "13800138003".into(),
+        ..body.clone()
+    };
+    let result = service::create(&ctx.state, &stale_client_body, None, "customer").await;
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("unavailable"),
+        "expected unavailable slot error, got: {err}"
+    );
+
+    let slot = date_slot::Entity::find_by_id(existing_slot.slot_instance_id)
+        .one(&ctx.state.db)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(slot.slot_instance_id, existing_slot.slot_instance_id);
+    assert_eq!(slot.slot_name, "Manual schedule");
+    assert_eq!(slot.is_booked, Some(0));
+    assert_eq!(slot.booking_id, None);
+}
+#[tokio::test]
 async fn create_booking_full_day_block() {
     let ctx = setup().await;
     let pid = seed_photographer(&ctx).await;

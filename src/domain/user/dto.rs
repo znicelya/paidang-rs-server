@@ -1,5 +1,6 @@
 //! DTOs for the user domain.
 
+use crate::util::deserialize_optional_i8;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use validator::Validate;
@@ -32,6 +33,7 @@ pub struct UpdateProfileRequest {
     pub avatar_url: Option<String>,
     pub background_image: Option<String>,
     #[validate(range(min = 0, max = 2))]
+    #[serde(default, deserialize_with = "deserialize_optional_i8")]
     pub gender: Option<i8>,
     pub birthday: Option<String>,
     pub province: Option<String>,

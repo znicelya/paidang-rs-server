@@ -187,7 +187,7 @@ pub async fn create(
 
     let booking_no = generate_booking_no();
     let status = body.status.as_deref().unwrap_or("pending");
-    let has_slot = body.slot_instance_id.is_some();
+    let should_lock = LOCKED_STATUSES.contains(&status);
 
     let txn = state
         .db
@@ -195,38 +195,20 @@ pub async fn create(
         .await
         .map_err(|e| AppError::Internal(format!("txn: {e}")))?;
 
-    // 4. Slot lock (if slot_instance_id is provided)
-    let should_lock = has_slot && LOCKED_STATUSES.contains(&status);
-    if should_lock {
-        let slot_id = body.slot_instance_id.unwrap();
-        // SELECT FOR UPDATE to atomically check and lock
-        let slot = date_slot::Entity::find_by_id(slot_id)
-            .one(&txn)
-            .await
-            .map_err(|e| AppError::Internal(format!("lock slot: {e}")))?
-            .ok_or_else(|| AppError::InputValidation("linked time slot not found".into()))?;
-
-        if slot.is_booked == Some(1) {
-            return Err(AppError::InputValidation(
-                "time slot already booked; refresh and retry".into(),
-            ));
-        }
-
-        let mut slot_active: date_slot::ActiveModel = slot.into();
-        slot_active.is_booked = Set(Some(1));
-        // booking_id will be set after insert; we'll update it next
-        slot_active
-            .update(&txn)
-            .await
-            .map_err(|e| AppError::Internal(format!("lock slot: {e}")))?;
-    }
+    // 4. Resolve the schedule slot. Customer bookings without slot_instance_id
+    // are still mapped into date_slot so the schedule table remains the source.
+    let resolved_slot_id = if should_lock {
+        Some(lock_or_create_booking_slot(&txn, body).await?)
+    } else {
+        body.slot_instance_id
+    };
 
     // 5. Insert booking
     let now_active: booking::ActiveModel = booking::ActiveModel {
         booking_no: Set(booking_no.clone()),
         user_id: Set(body.user_id),
         photographer_id: Set(body.photographer_id),
-        slot_instance_id: Set(body.slot_instance_id),
+        slot_instance_id: Set(resolved_slot_id),
         package_id: Set(body.package_id),
         booking_date: Set(body.booking_date.clone()),
         start_time: Set(body.start_time.clone()),
@@ -246,19 +228,20 @@ pub async fn create(
         .await
         .map_err(|e| AppError::Internal(format!("insert booking: {e}")))?;
 
-    // 6. Write back booking_id to the locked slot
+    // 6. Write back booking_id to the mapped schedule slot.
     if should_lock {
-        let slot_id = body.slot_instance_id.unwrap();
-        let slot = date_slot::Entity::find_by_id(slot_id)
-            .one(&txn)
-            .await
-            .map_err(|e| AppError::Internal(format!("re-read slot: {e}")))?;
-        if let Some(s) = slot {
-            let mut sa: date_slot::ActiveModel = s.into();
-            sa.booking_id = Set(Some(inserted.booking_id));
-            sa.update(&txn)
+        if let Some(slot_id) = resolved_slot_id {
+            let slot = date_slot::Entity::find_by_id(slot_id)
+                .one(&txn)
                 .await
-                .map_err(|e| AppError::Internal(format!("set booking_id on slot: {e}")))?;
+                .map_err(|e| AppError::Internal(format!("re-read slot: {e}")))?;
+            if let Some(s) = slot {
+                let mut sa: date_slot::ActiveModel = s.into();
+                sa.booking_id = Set(Some(inserted.booking_id));
+                sa.update(&txn)
+                    .await
+                    .map_err(|e| AppError::Internal(format!("set booking_id on slot: {e}")))?;
+            }
         }
     }
 
@@ -285,6 +268,76 @@ pub async fn create(
     })
 }
 
+fn booking_slot_name(body: &CreateBookingRequest) -> String {
+    let name = format!("客户预约：{}", body.customer_name);
+    if name.chars().count() <= 64 {
+        return name;
+    }
+    name.chars().take(64).collect()
+}
+
+async fn lock_or_create_booking_slot(
+    db: &impl sea_orm::ConnectionTrait,
+    body: &CreateBookingRequest,
+) -> Result<i32, AppError> {
+    if let Some(slot_id) = body.slot_instance_id {
+        let slot = date_slot::Entity::find_by_id(slot_id)
+            .one(db)
+            .await
+            .map_err(|e| AppError::Internal(format!("lock slot: {e}")))?
+            .ok_or_else(|| AppError::InputValidation("linked time slot not found".into()))?;
+
+        if slot.photographer_id != body.photographer_id
+            || slot.slot_date.as_str() != body.booking_date.as_str()
+            || slot.start_time.as_str() != body.start_time.as_str()
+            || slot.end_time.as_str() != body.end_time.as_str()
+        {
+            return Err(AppError::InputValidation(
+                "linked time slot does not match booking date/time".into(),
+            ));
+        }
+
+        return Err(AppError::InputValidation(
+            "time slot unavailable; choose another time".into(),
+        ));
+    }
+
+    let existing = date_slot::Entity::find()
+        .filter(date_slot::Column::PhotographerId.eq(body.photographer_id))
+        .filter(date_slot::Column::SlotDate.eq(&body.booking_date))
+        .filter(date_slot::Column::StartTime.lt(&body.end_time))
+        .filter(date_slot::Column::EndTime.gt(&body.start_time))
+        .one(db)
+        .await
+        .map_err(|e| AppError::Internal(format!("find slot: {e}")))?;
+
+    if existing.is_some() {
+        return Err(AppError::InputValidation(
+            "time slot unavailable; choose another time".into(),
+        ));
+    }
+
+    let inserted = date_slot::ActiveModel {
+        photographer_id: Set(body.photographer_id),
+        template_id: Set(None),
+        slot_date: Set(body.booking_date.clone()),
+        slot_name: Set(booking_slot_name(body)),
+        start_time: Set(body.start_time.clone()),
+        end_time: Set(body.end_time.clone()),
+        is_booked: Set(Some(1)),
+        booking_id: Set(None),
+        is_special: Set(Some(0)),
+        status: Set(Some(1)),
+        price: Set(None),
+        remark: Set(body.customer_remark.clone()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .map_err(|e| AppError::Internal(format!("create booking slot: {e}")))?;
+
+    Ok(inserted.slot_instance_id)
+}
 /// Update a booking. If status transitions to a released state **and** there's
 /// a linked slot_instance_id, unlock the slot in a single write transaction.
 pub async fn update(
