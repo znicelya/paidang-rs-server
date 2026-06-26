@@ -2,7 +2,7 @@
 
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
-    QuerySelect, Set,
+    QuerySelect, Set, TransactionTrait,
 };
 
 use crate::app_state::AppState;
@@ -56,6 +56,11 @@ pub async fn create_package(
     body: &CreatePackageReq,
     user_id: i32,
 ) -> Result<package::Model, AppError> {
+    let txn = state
+        .db
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(format!("txn: {e}")))?;
     let m = package::ActiveModel {
         name: Set(body.name.clone()),
         subtitle: Set(body.subtitle.clone()),
@@ -77,10 +82,43 @@ pub async fn create_package(
         update_by: Set(Some(user_id)),
         ..Default::default()
     }
-    .insert(&state.db)
+    .insert(&txn)
     .await
     .map_err(|e| AppError::Internal(format!("DB: {e}")))?;
+
+    if let Some(items) = &body.items {
+        insert_items(&txn, m.package_id, items).await?;
+    }
+
+    txn.commit()
+        .await
+        .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
     Ok(m)
+}
+
+/// Insert package line items for `package_id` (used by create + update).
+async fn insert_items(
+    db: &impl sea_orm::ConnectionTrait,
+    package_id: i32,
+    items: &[PackageItemInput],
+) -> Result<(), AppError> {
+    for (idx, it) in items.iter().enumerate() {
+        package_item::ActiveModel {
+            package_id: Set(package_id),
+            item_type: Set(it.item_type.clone().unwrap_or_else(|| "包含项".into())),
+            item_name: Set(it.item_name.clone()),
+            quantity: Set(it.quantity.or(Some(1))),
+            unit: Set(it.unit.clone()),
+            item_value: Set(it.item_value.clone()),
+            sort_order: Set(it.sort_order.or(Some(idx as i32))),
+            is_default: Set(it.is_default.or(Some(0))),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .map_err(|e| AppError::Internal(format!("insert item: {e}")))?;
+    }
+    Ok(())
 }
 
 pub async fn update_package(
@@ -89,7 +127,16 @@ pub async fn update_package(
     body: &UpdatePackageReq,
     user_id: i32,
 ) -> Result<package::Model, AppError> {
-    let existing = read_package(state, id).await?;
+    let txn = state
+        .db
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(format!("txn: {e}")))?;
+    let existing = package::Entity::find_by_id(id)
+        .one(&txn)
+        .await
+        .map_err(|e| AppError::Internal(format!("DB: {e}")))?
+        .ok_or(AppError::NotFound("套餐不存在".into()))?;
     let mut a: package::ActiveModel = existing.into();
     if let Some(ref v) = body.name { a.name = Set(v.clone()); }
     if let Some(ref v) = body.subtitle { a.subtitle = Set(Some(v.clone())); }
@@ -108,9 +155,23 @@ pub async fn update_package(
     if let Some(v) = body.is_recommend { a.is_recommend = Set(Some(v)); }
     if let Some(v) = body.status { a.status = Set(Some(v)); }
     a.update_by = Set(Some(user_id));
-    a.update(&state.db)
+    a.update(&txn)
         .await
         .map_err(|e| AppError::Internal(format!("DB: {e}")))?;
+
+    // When items are provided, fully replace the package's line items.
+    if let Some(items) = &body.items {
+        package_item::Entity::delete_many()
+            .filter(package_item::Column::PackageId.eq(id))
+            .exec(&txn)
+            .await
+            .map_err(|e| AppError::Internal(format!("clear items: {e}")))?;
+        insert_items(&txn, id, items).await?;
+    }
+
+    txn.commit()
+        .await
+        .map_err(|e| AppError::Internal(format!("commit: {e}")))?;
     read_package(state, id).await
 }
 

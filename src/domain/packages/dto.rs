@@ -29,6 +29,8 @@ pub struct CreatePackageReq {
     pub is_recommend: Option<i8>,
     #[serde(default, deserialize_with = "deserialize_optional_i8")]
     pub status: Option<i8>,
+    /// Optional inline line items; when present, inserted with the package.
+    pub items: Option<Vec<PackageItemInput>>,
 }
 
 /// PUT /packages/:id
@@ -53,6 +55,21 @@ pub struct UpdatePackageReq {
     pub is_recommend: Option<i8>,
     #[serde(default, deserialize_with = "deserialize_optional_i8")]
     pub status: Option<i8>,
+    /// When present, fully replaces the package's line items.
+    pub items: Option<Vec<PackageItemInput>>,
+}
+
+/// A package line item supplied inline when creating/updating a package.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct PackageItemInput {
+    pub item_type: Option<String>,
+    pub item_name: String,
+    pub quantity: Option<i32>,
+    pub unit: Option<String>,
+    pub item_value: Option<String>,
+    pub sort_order: Option<i32>,
+    #[serde(default, deserialize_with = "deserialize_optional_i8")]
+    pub is_default: Option<i8>,
 }
 
 #[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]

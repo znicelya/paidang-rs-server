@@ -56,7 +56,12 @@ pub async fn read(
     Path(id): Path<i32>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
     let p = service::read_package(&state, id).await?;
-    Ok(Json(ApiResponse::ok(serde_json::to_value(p).unwrap())))
+    let items = service::list_items(&state, id).await?;
+    let mut value = serde_json::to_value(p).unwrap();
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("items".to_string(), serde_json::to_value(items).unwrap());
+    }
+    Ok(Json(ApiResponse::ok(value)))
 }
 
 /// POST /packages - create a new package (provider login required).
