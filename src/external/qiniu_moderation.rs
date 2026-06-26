@@ -93,7 +93,8 @@ impl QiniuModeration {
             .await
             .map_err(|e| AppError::External(format!("Qiniu parse: {e}")))?;
 
-        // Check the result
+        // Check the result. `result.scenes` is an OBJECT keyed by scene name
+        // (`pulp` / `terror` / `politician`), each carrying its own `suggestion`.
         if let Some(suggestion) = result
             .pointer("/result/suggestion")
             .and_then(|v| v.as_str())
@@ -101,9 +102,19 @@ impl QiniuModeration {
             if suggestion == "block" {
                 let reason = result
                     .pointer("/result/scenes")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("unknown")
-                    .to_string();
+                    .and_then(|v| v.as_object())
+                    .map(|scenes| {
+                        scenes
+                            .iter()
+                            .filter(|(_, sc)| {
+                                sc.get("suggestion").and_then(|s| s.as_str()) == Some("block")
+                            })
+                            .map(|(name, _)| name.clone())
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    })
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| "unknown".to_string());
                 return Ok(ModerationResult::Block(reason));
             }
             return Ok(ModerationResult::Pass);
