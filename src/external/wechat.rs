@@ -130,7 +130,10 @@ impl WechatApi for ReqwestWechat {
             .get(&url)
             .send()
             .await
-            .map_err(|e| AppError::External(format!("WeChat code2session failed: {e}")))?
+            .map_err(|e| {
+                tracing::error!("请求失败: {:#?}", e);
+                AppError::External(format!("WeChat code2session failed: {e}"))
+            })?
             .json()
             .await
             .map_err(|e| AppError::External(format!("WeChat code2session parse failed: {e}")))?;
