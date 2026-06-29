@@ -5,6 +5,7 @@ use axum::extract::{Path, Query, State};
 use validator::Validate;
 
 use crate::app_state::AppState;
+use crate::entity::package;
 use crate::error::AppError;
 use crate::middleware::auth::AuthUser;
 use crate::response::{ApiResponse, PaginatedData};
@@ -13,6 +14,18 @@ use super::dto::*;
 use super::service;
 
 // Package handlers
+
+async fn package_with_items(
+    state: &AppState,
+    p: package::Model,
+) -> Result<serde_json::Value, AppError> {
+    let items = service::list_items(state, p.package_id).await?;
+    let mut value = serde_json::to_value(p).unwrap();
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("items".to_string(), serde_json::to_value(items).unwrap());
+    }
+    Ok(value)
+}
 
 /// GET /packages - list packages with filters.
 #[utoipa::path(
@@ -56,11 +69,7 @@ pub async fn read(
     Path(id): Path<i32>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
     let p = service::read_package(&state, id).await?;
-    let items = service::list_items(&state, id).await?;
-    let mut value = serde_json::to_value(p).unwrap();
-    if let Some(obj) = value.as_object_mut() {
-        obj.insert("items".to_string(), serde_json::to_value(items).unwrap());
-    }
+    let value = package_with_items(&state, p).await?;
     Ok(Json(ApiResponse::ok(value)))
 }
 
@@ -84,7 +93,8 @@ pub async fn create(
     body.validate()
         .map_err(|e| AppError::InputValidation(e.to_string()))?;
     let p = service::create_package(&state, &body, auth.user_id).await?;
-    Ok(Json(ApiResponse::ok(serde_json::to_value(p).unwrap())))
+    let value = package_with_items(&state, p).await?;
+    Ok(Json(ApiResponse::ok(value)))
 }
 
 /// PUT /packages/{id} - update a package (provider login required).
@@ -107,7 +117,8 @@ pub async fn update(
     Json(body): Json<UpdatePackageReq>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
     let p = service::update_package(&state, id, &body, auth.user_id).await?;
-    Ok(Json(ApiResponse::ok(serde_json::to_value(p).unwrap())))
+    let value = package_with_items(&state, p).await?;
+    Ok(Json(ApiResponse::ok(value)))
 }
 
 /// DELETE /packages/{id} - delete a package (provider login required).

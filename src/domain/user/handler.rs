@@ -1,7 +1,7 @@
 //! User handlers: GET profile, PUT profile, POST avatar upload.
 
 use axum::Json;
-use axum::extract::{Multipart, State};
+use axum::extract::{Multipart, Query, State};
 use validator::Validate;
 
 use crate::app_state::AppState;
@@ -9,24 +9,28 @@ use crate::error::AppError;
 use crate::middleware::auth::AuthUser;
 use crate::response::ApiResponse;
 
-use super::dto::{self, UpdateProfileRequest};
+use super::dto::{self, ProfileQuery, UpdateProfileRequest};
 use super::service;
 
-/// GET /user/profile — read the authenticated user's profile.
+/// GET /user/profile — read a public user profile by user_id.
 #[utoipa::path(
     get,
     path = "/user/profile",
+    params(ProfileQuery),
     responses(
         (status = 200, body = ApiResponse<dto::ProfileData>),
-        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Missing user_id"),
     ),
     tag = "user",
 )]
 pub async fn get_profile(
     State(state): State<AppState>,
-    auth: AuthUser,
+    Query(query): Query<ProfileQuery>,
 ) -> Result<Json<ApiResponse<dto::ProfileData>>, AppError> {
-    let data = service::get_profile(&state, auth.user_id).await?;
+    let user_id = query
+        .user_id
+        .ok_or_else(|| AppError::InputValidation("user_id is required".into()))?;
+    let data = service::get_profile(&state, user_id).await?;
     Ok(Json(ApiResponse::ok(data)))
 }
 

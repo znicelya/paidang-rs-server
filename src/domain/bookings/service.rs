@@ -465,6 +465,7 @@ pub async fn stats(state: &AppState, photographer_id: Option<i32>) -> Result<Sta
     use chrono::Local;
 
     let today = Local::now().format("%Y-%m-%d").to_string();
+    let active_statuses = vec!["confirmed", "in_progress"];
 
     let mut base = booking::Entity::find();
     if let Some(pid) = photographer_id {
@@ -481,20 +482,32 @@ pub async fn stats(state: &AppState, photographer_id: Option<i32>) -> Result<Sta
     let today_count = base
         .clone()
         .filter(booking::Column::BookingDate.eq(&today))
-        .filter(booking::Column::Status.is_not_in(vec!["cancelled", "refunded", "completed"]))
+        .filter(booking::Column::Status.is_in(active_statuses.clone()))
+        .count(&state.db)
+        .await
+        .map_err(|e| AppError::Internal(format!("DB: {e}")))?;
+
+    let mut manual_today_slots = date_slot::Entity::find()
+        .filter(date_slot::Column::SlotDate.eq(&today))
+        .filter(date_slot::Column::BookingId.is_null())
+        .filter(date_slot::Column::Status.eq(1));
+    if let Some(pid) = photographer_id {
+        manual_today_slots = manual_today_slots.filter(date_slot::Column::PhotographerId.eq(pid));
+    }
+    let manual_today_count = manual_today_slots
         .count(&state.db)
         .await
         .map_err(|e| AppError::Internal(format!("DB: {e}")))?;
 
     let in_progress = base
-        .filter(booking::Column::Status.eq("in_progress"))
+        .filter(booking::Column::Status.is_in(active_statuses))
         .count(&state.db)
         .await
         .map_err(|e| AppError::Internal(format!("DB: {e}")))?;
 
     Ok(StatsData {
         pending,
-        today: today_count,
+        today: today_count + manual_today_count,
         in_progress,
     })
 }

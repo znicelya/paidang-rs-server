@@ -428,30 +428,145 @@ async fn update_status_writes_log() {
 async fn stats_returns_counts() {
     let ctx = setup().await;
     let pid = seed_photographer(&ctx).await;
+    let other_pid = {
+        use paidang_rs_server::entity::user;
+        use sea_orm::{ActiveModelTrait, Set};
+        user::ActiveModel {
+            openid: Set("wx-stats-other-photographer".into()),
+            role: Set(1),
+            status: Set(1),
+            ..Default::default()
+        }
+        .insert(&ctx.state.db)
+        .await
+        .unwrap()
+        .user_id
+    };
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
 
-    let body = CreateBookingRequest {
+    let pending = CreateBookingRequest {
         photographer_id: pid,
         user_id: None,
         slot_instance_id: None,
         package_id: None,
-        booking_date: chrono::Local::now().format("%Y-%m-%d").to_string(),
+        booking_date: "2026-10-01".into(),
         start_time: "09:00".into(),
         end_time: "10:00".into(),
         total_amount: None,
         deposit_amount: None,
         paid_amount: None,
         status: Some("pending".into()),
-        customer_name: "Stats".into(),
+        customer_name: "StatsPending".into(),
         customer_phone: "13400134000".into(),
         customer_remark: None,
         photographer_remark: None,
     };
-    service::create(&ctx.state, &body, Some(pid), "provider")
+    service::create(&ctx.state, &pending, Some(pid), "provider")
         .await
         .unwrap();
 
+    let confirmed_today = CreateBookingRequest {
+        booking_date: today.clone(),
+        start_time: "10:00".into(),
+        end_time: "11:00".into(),
+        status: Some("confirmed".into()),
+        customer_name: "StatsConfirmedToday".into(),
+        customer_phone: "13400134001".into(),
+        ..pending.clone()
+    };
+    service::create(&ctx.state, &confirmed_today, Some(pid), "provider")
+        .await
+        .unwrap();
+
+    let active_future = CreateBookingRequest {
+        booking_date: "2026-10-02".into(),
+        start_time: "11:00".into(),
+        end_time: "12:00".into(),
+        status: Some("in_progress".into()),
+        customer_name: "StatsInProgressFuture".into(),
+        customer_phone: "13400134002".into(),
+        ..pending.clone()
+    };
+    service::create(&ctx.state, &active_future, Some(pid), "provider")
+        .await
+        .unwrap();
+
+    let completed_today = CreateBookingRequest {
+        booking_date: today.clone(),
+        start_time: "12:00".into(),
+        end_time: "13:00".into(),
+        status: Some("completed".into()),
+        customer_name: "StatsCompletedToday".into(),
+        customer_phone: "13400134003".into(),
+        ..pending.clone()
+    };
+    service::create(&ctx.state, &completed_today, Some(pid), "provider")
+        .await
+        .unwrap();
+
+    let other_confirmed_today = CreateBookingRequest {
+        photographer_id: other_pid,
+        booking_date: today.clone(),
+        start_time: "13:00".into(),
+        end_time: "14:00".into(),
+        status: Some("confirmed".into()),
+        customer_name: "StatsOtherPhotographer".into(),
+        customer_phone: "13400134004".into(),
+        ..pending.clone()
+    };
+    service::create(
+        &ctx.state,
+        &other_confirmed_today,
+        Some(other_pid),
+        "provider",
+    )
+    .await
+    .unwrap();
+
+    use paidang_rs_server::entity::date_slot;
+    use sea_orm::{ActiveModelTrait, Set};
+    date_slot::ActiveModel {
+        photographer_id: Set(pid),
+        template_id: Set(None),
+        slot_date: Set(today.clone()),
+        slot_name: Set("Manual today schedule".into()),
+        start_time: Set("14:00".into()),
+        end_time: Set("15:00".into()),
+        is_booked: Set(Some(0)),
+        booking_id: Set(None),
+        is_special: Set(Some(1)),
+        status: Set(Some(1)),
+        price: Set(None),
+        remark: Set(None),
+        ..Default::default()
+    }
+    .insert(&ctx.state.db)
+    .await
+    .unwrap();
+
+    date_slot::ActiveModel {
+        photographer_id: Set(other_pid),
+        template_id: Set(None),
+        slot_date: Set(today),
+        slot_name: Set("Other manual today schedule".into()),
+        start_time: Set("15:00".into()),
+        end_time: Set("16:00".into()),
+        is_booked: Set(Some(0)),
+        booking_id: Set(None),
+        is_special: Set(Some(1)),
+        status: Set(Some(1)),
+        price: Set(None),
+        remark: Set(None),
+        ..Default::default()
+    }
+    .insert(&ctx.state.db)
+    .await
+    .unwrap();
+
     let stats = service::stats(&ctx.state, Some(pid)).await.unwrap();
-    assert!(stats.pending >= 1);
+    assert_eq!(stats.pending, 1);
+    assert_eq!(stats.today, 2);
+    assert_eq!(stats.in_progress, 2);
 }
 
 // Delete.

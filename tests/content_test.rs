@@ -2,9 +2,14 @@
 
 mod common;
 
+use axum::Extension;
+use axum::body::{Body, to_bytes};
+use axum::http::{Request, StatusCode, header};
 use common::setup;
 use paidang_rs_server::domain::packages::dto::{CreatePackageReq, ListQuery, UpdatePackageReq};
 use paidang_rs_server::domain::packages::service;
+use paidang_rs_server::middleware::auth::JwtSecret;
+use tower::ServiceExt;
 
 // ── Packages ──────────────────────────────────────────────
 
@@ -29,6 +34,7 @@ async fn create_and_read_package() {
         is_hot: None,
         is_recommend: None,
         status: Some(1),
+        items: None,
     };
     let created = service::create_package(&ctx.state, &body, 1).await.unwrap();
     assert!(created.package_id > 0);
@@ -38,6 +44,94 @@ async fn create_and_read_package() {
         .await
         .unwrap();
     assert_eq!(found.price, 299900);
+}
+
+#[tokio::test]
+async fn create_and_update_package_response_includes_items() {
+    let ctx = setup().await;
+    let token = common::test_jwt(1, &ctx.jwt_secret);
+
+    let (router, _) = paidang_rs_server::domain::packages::router::routes().split_for_parts();
+    let app = router
+        .layer(Extension(JwtSecret(ctx.jwt_secret.clone())))
+        .with_state(ctx.state.clone());
+
+    let create_body = serde_json::json!({
+        "name": "Package with items",
+        "price": 19900,
+        "status": 1,
+        "items": [
+            {
+                "item_type": "included",
+                "item_name": "Retouched photos",
+                "item_value": "12",
+                "quantity": 1,
+                "unit": "item",
+                "sort_order": 0,
+                "is_default": false
+            }
+        ]
+    });
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/packages")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(create_body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let status = response.status();
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(status, StatusCode::OK, "{json}");
+    assert_eq!(json["success"], true, "{json}");
+    assert_eq!(json["data"]["items"][0]["item_name"], "Retouched photos");
+    assert_eq!(json["data"]["items"][0]["item_value"], "12");
+
+    let package_id = json["data"]["package_id"].as_i64().unwrap();
+    let update_body = serde_json::json!({
+        "items": [
+            {
+                "item_type": "included",
+                "item_name": "Printed album",
+                "item_value": "1",
+                "quantity": 1,
+                "unit": "item",
+                "sort_order": 0,
+                "is_default": false
+            }
+        ]
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!("/packages/{package_id}"))
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(update_body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let status = response.status();
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(status, StatusCode::OK, "{json}");
+    assert_eq!(json["success"], true, "{json}");
+    assert_eq!(json["data"]["items"][0]["item_name"], "Printed album");
+    assert_eq!(json["data"]["items"][0]["item_value"], "1");
 }
 
 #[tokio::test]
@@ -63,6 +157,7 @@ async fn list_packages_pagination() {
             is_hot: None,
             is_recommend: None,
             status: Some(1),
+            items: None,
         };
         service::create_package(&ctx.state, &body, 1).await.unwrap();
     }
@@ -99,6 +194,7 @@ async fn update_package() {
         is_hot: None,
         is_recommend: None,
         status: Some(1),
+        items: None,
     };
     let created = service::create_package(&ctx.state, &body, 1).await.unwrap();
 
@@ -135,6 +231,7 @@ async fn delete_package() {
         is_hot: None,
         is_recommend: None,
         status: Some(1),
+        items: None,
     };
     let created = service::create_package(&ctx.state, &body, 1).await.unwrap();
 
@@ -171,6 +268,7 @@ async fn create_and_list_items() {
         is_hot: None,
         is_recommend: None,
         status: Some(1),
+        items: None,
     };
     let pkg = service::create_package(&ctx.state, &body, 1).await.unwrap();
 
@@ -189,6 +287,8 @@ async fn create_and_list_items() {
     let created = service::create_item(&ctx.state, &item).await.unwrap();
     assert_eq!(created.item_name, "精修照片");
 
-    let items = service::list_items(&ctx.state, pkg.package_id).await.unwrap();
+    let items = service::list_items(&ctx.state, pkg.package_id)
+        .await
+        .unwrap();
     assert_eq!(items.len(), 1);
 }

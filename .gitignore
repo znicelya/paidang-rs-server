@@ -6,4 +6,5 @@
 .codegraph
 .env
 .worktrees/
+target-codex/
 

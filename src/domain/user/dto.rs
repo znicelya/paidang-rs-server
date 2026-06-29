@@ -5,6 +5,12 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use validator::Validate;
 
+/// GET /user/profile query.
+#[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
+pub struct ProfileQuery {
+    pub user_id: Option<i32>,
+}
+
 /// GET /user/profile response data.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ProfileData {

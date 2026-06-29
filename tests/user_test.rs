@@ -12,6 +12,36 @@ use paidang_rs_server::config;
 use paidang_rs_server::middleware::auth::JwtSecret;
 
 #[tokio::test]
+async fn get_profile_without_auth_reaches_public_handler() {
+    let jwt_secret = "test-secret".to_string();
+    let state = test_state(jwt_secret.clone());
+
+    let (router, _) = paidang_rs_server::domain::user::router::routes().split_for_parts();
+    let app = router
+        .layer(Extension(JwtSecret(jwt_secret)))
+        .with_state(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/user/profile")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let status = response.status();
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{json}");
+    assert_eq!(json["success"], false);
+    assert_eq!(json["errors"][0]["message"], "user_id is required");
+}
+
+#[tokio::test]
 async fn avatar_upload_accepts_mini_program_avatar_field() {
     let jwt_secret = "test-secret".to_string();
     let state = test_state(jwt_secret.clone());
