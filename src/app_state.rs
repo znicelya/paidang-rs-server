@@ -21,22 +21,19 @@ pub struct AppState {
 impl AppState {
     pub fn new(settings: Arc<Settings>, db: DatabaseConnection) -> Self {
         let cos_client = CosClient::from_settings(&settings);
-        let moderation = if settings.qiniu_access_key.is_some()
-            && settings.qiniu_secret_key.is_some()
-        {
-            Some(QiniuModeration::new(
-                settings.qiniu_access_key.clone(),
-                settings.qiniu_secret_key.clone(),
-            ))
-        } else {
-            None
-        };
+        let moderation =
+            if settings.qiniu_access_key.is_some() && settings.qiniu_secret_key.is_some() {
+                Some(QiniuModeration::new(
+                    settings.qiniu_access_key.clone(),
+                    settings.qiniu_secret_key.clone(),
+                ))
+            } else {
+                None
+            };
 
         // Log ring buffer for dev mode (500 entries)
         let log_buffer = if matches!(settings.env.as_str(), "development" | "dev") {
-            Some(Arc::new(Mutex::new(
-                LogRing::new(500),
-            )))
+            Some(Arc::new(Mutex::new(LogRing::new(500))))
         } else {
             None
         };

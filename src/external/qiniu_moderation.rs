@@ -43,9 +43,7 @@ impl QiniuModeration {
 
     /// Check if a MIME type should be moderated (images only).
     pub fn should_moderate(mime: &str) -> bool {
-        mime.starts_with("image/")
-            && !mime.contains("svg")
-            && !mime.contains("gif")
+        mime.starts_with("image/") && !mime.contains("svg") && !mime.contains("gif")
     }
 
     /// Submit a base64-encoded image for moderation.
@@ -138,11 +136,11 @@ impl QiniuModeration {
         let host = "ai.qiniuapi.com";
         let content_type = "application/json";
 
-        let signing_str = format!("POST {path}\nHost: {host}\nContent-Type: {content_type}\n\n{body}");
+        let signing_str =
+            format!("POST {path}\nHost: {host}\nContent-Type: {content_type}\n\n{body}");
 
         type HmacSha1 = Hmac<Sha1>;
-        let mut mac = HmacSha1::new_from_slice(secret_key.as_bytes())
-            .expect("HMAC-SHA1 key");
+        let mut mac = HmacSha1::new_from_slice(secret_key.as_bytes()).expect("HMAC-SHA1 key");
         mac.update(signing_str.as_bytes());
         let sig = base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
 

@@ -1,7 +1,7 @@
 //! Booking logs router — read-only list. JWT-protected.
 
-use utoipa_axum::routes;
 use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 
 use crate::app_state::AppState;
 

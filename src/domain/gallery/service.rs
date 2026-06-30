@@ -9,7 +9,9 @@ use crate::app_state::AppState;
 use crate::entity::{gallery, gallery_tag};
 use crate::error::AppError;
 
-use super::dto::{CreateGalleryReq, CreateTagReq, GalleryListQuery, TagListQuery, UpdateGalleryReq, UpdateTagReq};
+use super::dto::{
+    CreateGalleryReq, CreateTagReq, GalleryListQuery, TagListQuery, UpdateGalleryReq, UpdateTagReq,
+};
 
 /// List gallery items with pagination.
 pub async fn list(
@@ -18,8 +20,7 @@ pub async fn list(
 ) -> Result<(Vec<gallery::Model>, u64), AppError> {
     let page = q.page.unwrap_or(1);
     let ps = q.page_size.unwrap_or(20).min(100);
-    let mut s = gallery::Entity::find()
-        .filter(gallery::Column::Status.eq(q.status.unwrap_or(1)));
+    let mut s = gallery::Entity::find().filter(gallery::Column::Status.eq(q.status.unwrap_or(1)));
     if let Some(gid) = q.group_id {
         s = s.filter(gallery::Column::GroupId.eq(gid));
     }
@@ -99,27 +100,68 @@ pub async fn update(
         .map_err(|e| AppError::Internal(format!("DB:{e}")))?
         .ok_or(AppError::NotFound("不存在".into()))?;
     let mut a: gallery::ActiveModel = rec.into();
-    if let Some(v) = body.group_id { a.group_id = Set(Some(v)); }
-    if let Some(v) = body.title { a.title = Set(v); }
-    if let Some(v) = body.subtitle { a.subtitle = Set(Some(v)); }
-    if let Some(v) = body.cover_image { a.cover_image = Set(Some(v)); }
-    if let Some(v) = body.image_url { a.image_url = Set(Some(v)); }
-    if let Some(v) = body.image_list { a.image_list = Set(Some(v)); }
-    if let Some(v) = body.video_url { a.video_url = Set(Some(v)); }
-    if let Some(v) = body.media_type { a.media_type = Set(Some(v)); }
-    if let Some(v) = body.tags { a.tags = Set(Some(v)); }
-    if let Some(v) = body.photographer_id { a.photographer_id = Set(Some(v)); }
-    if let Some(v) = body.photographer_name { a.photographer_name = Set(Some(v)); }
-    if let Some(v) = body.shooting_location { a.shooting_location = Set(Some(v)); }
-    if let Some(v) = body.shooting_date { a.shooting_date = Set(Some(v)); }
-    if let Some(v) = body.width { a.width = Set(Some(v)); }
-    if let Some(v) = body.height { a.height = Set(Some(v)); }
-    if let Some(v) = body.file_size { a.file_size = Set(Some(v)); }
-    if let Some(v) = body.sort_order { a.sort_order = Set(Some(v)); }
-    if let Some(v) = body.is_cover { a.is_cover = Set(Some(v)); }
-    if let Some(v) = body.status { a.status = Set(Some(v)); }
+    if let Some(v) = body.group_id {
+        a.group_id = Set(Some(v));
+    }
+    if let Some(v) = body.title {
+        a.title = Set(v);
+    }
+    if let Some(v) = body.subtitle {
+        a.subtitle = Set(Some(v));
+    }
+    if let Some(v) = body.cover_image {
+        a.cover_image = Set(Some(v));
+    }
+    if let Some(v) = body.image_url {
+        a.image_url = Set(Some(v));
+    }
+    if let Some(v) = body.image_list {
+        a.image_list = Set(Some(v));
+    }
+    if let Some(v) = body.video_url {
+        a.video_url = Set(Some(v));
+    }
+    if let Some(v) = body.media_type {
+        a.media_type = Set(Some(v));
+    }
+    if let Some(v) = body.tags {
+        a.tags = Set(Some(v));
+    }
+    if let Some(v) = body.photographer_id {
+        a.photographer_id = Set(Some(v));
+    }
+    if let Some(v) = body.photographer_name {
+        a.photographer_name = Set(Some(v));
+    }
+    if let Some(v) = body.shooting_location {
+        a.shooting_location = Set(Some(v));
+    }
+    if let Some(v) = body.shooting_date {
+        a.shooting_date = Set(Some(v));
+    }
+    if let Some(v) = body.width {
+        a.width = Set(Some(v));
+    }
+    if let Some(v) = body.height {
+        a.height = Set(Some(v));
+    }
+    if let Some(v) = body.file_size {
+        a.file_size = Set(Some(v));
+    }
+    if let Some(v) = body.sort_order {
+        a.sort_order = Set(Some(v));
+    }
+    if let Some(v) = body.is_cover {
+        a.is_cover = Set(Some(v));
+    }
+    if let Some(v) = body.status {
+        a.status = Set(Some(v));
+    }
     a.update_by = Set(Some(user_id));
-    let r = a.update(&state.db).await.map_err(|e| AppError::Internal(format!("DB:{e}")))?;
+    let r = a
+        .update(&state.db)
+        .await
+        .map_err(|e| AppError::Internal(format!("DB:{e}")))?;
     Ok(r)
 }
 
@@ -197,10 +239,19 @@ pub async fn update_tag(
         .map_err(|e| AppError::Internal(format!("DB:{e}")))?
         .ok_or(AppError::NotFound("不存在".into()))?;
     let mut a: gallery_tag::ActiveModel = rec.into();
-    if let Some(v) = body.tag_name { a.tag_name = Set(v); }
-    if let Some(v) = body.tag_type { a.tag_type = Set(Some(v)); }
-    if let Some(v) = body.sort_order { a.sort_order = Set(Some(v)); }
-    let r = a.update(&state.db).await.map_err(|e| AppError::Internal(format!("DB:{e}")))?;
+    if let Some(v) = body.tag_name {
+        a.tag_name = Set(v);
+    }
+    if let Some(v) = body.tag_type {
+        a.tag_type = Set(Some(v));
+    }
+    if let Some(v) = body.sort_order {
+        a.sort_order = Set(Some(v));
+    }
+    let r = a
+        .update(&state.db)
+        .await
+        .map_err(|e| AppError::Internal(format!("DB:{e}")))?;
     Ok(r)
 }
 

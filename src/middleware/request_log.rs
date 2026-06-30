@@ -79,10 +79,7 @@ pub async fn request_logger(req: Request, next: Next) -> Response {
     let status: StatusCode;
 
     // Hoist the log buffer out of extensions before moving req
-    let log_buf = req
-        .extensions()
-        .get::<LogBuffer>()
-        .cloned();
+    let log_buf = req.extensions().get::<LogBuffer>().cloned();
 
     let response = next.run(req).await;
     status = response.status();

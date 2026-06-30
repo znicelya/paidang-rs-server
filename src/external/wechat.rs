@@ -154,7 +154,8 @@ impl WechatApi for ReqwestWechat {
 
     async fn get_user_phone(&self, phone_code: &str) -> Result<String, AppError> {
         let token = self.get_access_token().await?;
-        let url = "https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token=".to_string()
+        let url = "https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token="
+            .to_string()
             + &token;
         let body = serde_json::json!({ "code": phone_code });
 

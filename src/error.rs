@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use serde::Serialize;
 use serde_json::json;
 
@@ -75,12 +75,8 @@ impl IntoResponse for AppError {
             AppError::NotFound(m) => (StatusCode::NOT_FOUND, CODE_NOT_FOUND, m.clone()),
             AppError::Unauthorized(m) => (StatusCode::UNAUTHORIZED, CODE_UNAUTHORIZED, m.clone()),
             AppError::Forbidden(m) => (StatusCode::FORBIDDEN, CODE_FORBIDDEN, m.clone()),
-            AppError::External(m) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, CODE_INTERNAL, m.clone())
-            }
-            AppError::Internal(m) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, CODE_INTERNAL, m.clone())
-            }
+            AppError::External(m) => (StatusCode::INTERNAL_SERVER_ERROR, CODE_INTERNAL, m.clone()),
+            AppError::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, CODE_INTERNAL, m.clone()),
         };
 
         let body = json!({

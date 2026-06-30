@@ -40,7 +40,9 @@ pub async fn get_profile(state: &AppState, user_id: i32) -> Result<ProfileData, 
         city: p.as_ref().and_then(|r| r.city.clone()),
         birthday: p.as_ref().and_then(|r| r.birthday.clone()),
         bio: p.as_ref().and_then(|r| r.bio.clone()),
-        create_time: u.create_time.map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string()),
+        create_time: u
+            .create_time
+            .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string()),
     })
 }
 

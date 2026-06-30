@@ -1,7 +1,7 @@
 //! Booking logs handlers — read-only list. JWT-protected.
 
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 
 use crate::app_state::AppState;
 use crate::error::AppError;
@@ -30,8 +30,13 @@ pub async fn list(
     let page = q.page.unwrap_or(1);
     let ps = q.page_size.unwrap_or(20);
     let (rows, total) = service::list(&state, &q).await?;
-    let list: Vec<_> = rows.iter().map(|r| serde_json::to_value(r).unwrap()).collect();
-    Ok(Json(ApiResponse::ok(PaginatedData::new(list, total, page, ps))))
+    let list: Vec<_> = rows
+        .iter()
+        .map(|r| serde_json::to_value(r).unwrap())
+        .collect();
+    Ok(Json(ApiResponse::ok(PaginatedData::new(
+        list, total, page, ps,
+    ))))
 }
 
 /// GET /booking-logs/{id} — read a single booking log entry.

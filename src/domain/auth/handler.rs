@@ -1,7 +1,7 @@
 //! POST /auth/login — WeChat mini-program login + JWT issuance.
 
-use axum::extract::State;
 use axum::Json;
+use axum::extract::State;
 use validator::Validate;
 
 use crate::app_state::AppState;

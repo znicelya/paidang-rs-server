@@ -1,14 +1,14 @@
 //! Time slot templates handlers.
 
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use validator::Validate;
 
 use crate::app_state::AppState;
 use crate::error::AppError;
 use crate::middleware::auth::AuthUser;
-use crate::util::require_owner;
 use crate::response::{ApiResponse, PaginatedData};
+use crate::util::require_owner;
 
 use super::dto::*;
 use super::service;

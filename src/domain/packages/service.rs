@@ -19,8 +19,8 @@ pub async fn list_packages(
 ) -> Result<(Vec<package::Model>, u64), AppError> {
     let page = query.page.unwrap_or(1);
     let ps = query.page_size.unwrap_or(20).min(100);
-    let mut s = package::Entity::find()
-        .filter(package::Column::Status.eq(query.status.unwrap_or(1)));
+    let mut s =
+        package::Entity::find().filter(package::Column::Status.eq(query.status.unwrap_or(1)));
 
     if let Some(ref cat) = query.category {
         s = s.filter(package::Column::Category.eq(cat));
@@ -138,22 +138,54 @@ pub async fn update_package(
         .map_err(|e| AppError::Internal(format!("DB: {e}")))?
         .ok_or(AppError::NotFound("套餐不存在".into()))?;
     let mut a: package::ActiveModel = existing.into();
-    if let Some(ref v) = body.name { a.name = Set(v.clone()); }
-    if let Some(ref v) = body.subtitle { a.subtitle = Set(Some(v.clone())); }
-    if let Some(ref v) = body.category { a.category = Set(Some(v.clone())); }
-    if let Some(v) = body.price { a.price = Set(v); }
-    if let Some(v) = body.original_price { a.original_price = Set(Some(v)); }
-    if let Some(v) = body.deposit { a.deposit = Set(Some(v)); }
-    if let Some(ref v) = body.cover_image { a.cover_image = Set(Some(v.clone())); }
-    if let Some(ref v) = body.description { a.description = Set(Some(v.clone())); }
-    if let Some(ref v) = body.service_items { a.service_items = Set(Some(v.clone())); }
-    if let Some(ref v) = body.suitable_people { a.suitable_people = Set(Some(v.clone())); }
-    if let Some(ref v) = body.shooting_location { a.shooting_location = Set(Some(v.clone())); }
-    if let Some(v) = body.validity_days { a.validity_days = Set(Some(v)); }
-    if let Some(v) = body.sort_order { a.sort_order = Set(Some(v)); }
-    if let Some(v) = body.is_hot { a.is_hot = Set(Some(v)); }
-    if let Some(v) = body.is_recommend { a.is_recommend = Set(Some(v)); }
-    if let Some(v) = body.status { a.status = Set(Some(v)); }
+    if let Some(ref v) = body.name {
+        a.name = Set(v.clone());
+    }
+    if let Some(ref v) = body.subtitle {
+        a.subtitle = Set(Some(v.clone()));
+    }
+    if let Some(ref v) = body.category {
+        a.category = Set(Some(v.clone()));
+    }
+    if let Some(v) = body.price {
+        a.price = Set(v);
+    }
+    if let Some(v) = body.original_price {
+        a.original_price = Set(Some(v));
+    }
+    if let Some(v) = body.deposit {
+        a.deposit = Set(Some(v));
+    }
+    if let Some(ref v) = body.cover_image {
+        a.cover_image = Set(Some(v.clone()));
+    }
+    if let Some(ref v) = body.description {
+        a.description = Set(Some(v.clone()));
+    }
+    if let Some(ref v) = body.service_items {
+        a.service_items = Set(Some(v.clone()));
+    }
+    if let Some(ref v) = body.suitable_people {
+        a.suitable_people = Set(Some(v.clone()));
+    }
+    if let Some(ref v) = body.shooting_location {
+        a.shooting_location = Set(Some(v.clone()));
+    }
+    if let Some(v) = body.validity_days {
+        a.validity_days = Set(Some(v));
+    }
+    if let Some(v) = body.sort_order {
+        a.sort_order = Set(Some(v));
+    }
+    if let Some(v) = body.is_hot {
+        a.is_hot = Set(Some(v));
+    }
+    if let Some(v) = body.is_recommend {
+        a.is_recommend = Set(Some(v));
+    }
+    if let Some(v) = body.status {
+        a.status = Set(Some(v));
+    }
     a.update_by = Set(Some(user_id));
     a.update(&txn)
         .await
@@ -229,13 +261,27 @@ pub async fn update_item(
         .map_err(|e| AppError::Internal(format!("DB: {e}")))?
         .ok_or(AppError::NotFound("套餐项不存在".into()))?;
     let mut a: package_item::ActiveModel = existing.into();
-    if let Some(ref v) = body.item_type { a.item_type = Set(v.clone()); }
-    if let Some(ref v) = body.item_name { a.item_name = Set(v.clone()); }
-    if let Some(v) = body.quantity { a.quantity = Set(Some(v)); }
-    if let Some(ref v) = body.unit { a.unit = Set(Some(v.clone())); }
-    if let Some(ref v) = body.item_value { a.item_value = Set(Some(v.clone())); }
-    if let Some(v) = body.sort_order { a.sort_order = Set(Some(v)); }
-    if let Some(v) = body.is_default { a.is_default = Set(Some(v)); }
+    if let Some(ref v) = body.item_type {
+        a.item_type = Set(v.clone());
+    }
+    if let Some(ref v) = body.item_name {
+        a.item_name = Set(v.clone());
+    }
+    if let Some(v) = body.quantity {
+        a.quantity = Set(Some(v));
+    }
+    if let Some(ref v) = body.unit {
+        a.unit = Set(Some(v.clone()));
+    }
+    if let Some(ref v) = body.item_value {
+        a.item_value = Set(Some(v.clone()));
+    }
+    if let Some(v) = body.sort_order {
+        a.sort_order = Set(Some(v));
+    }
+    if let Some(v) = body.is_default {
+        a.is_default = Set(Some(v));
+    }
     a.update(&state.db)
         .await
         .map_err(|e| AppError::Internal(format!("DB: {e}")))?;
@@ -297,10 +343,18 @@ pub async fn update_gallery(
         .map_err(|e| AppError::Internal(format!("DB: {e}")))?
         .ok_or(AppError::NotFound("套餐图片不存在".into()))?;
     let mut a: package_gallery::ActiveModel = existing.into();
-    if let Some(ref v) = body.image_url { a.image_url = Set(v.clone()); }
-    if let Some(ref v) = body.image_type { a.image_type = Set(Some(v.clone())); }
-    if let Some(ref v) = body.caption { a.caption = Set(Some(v.clone())); }
-    if let Some(v) = body.sort_order { a.sort_order = Set(Some(v)); }
+    if let Some(ref v) = body.image_url {
+        a.image_url = Set(v.clone());
+    }
+    if let Some(ref v) = body.image_type {
+        a.image_type = Set(Some(v.clone()));
+    }
+    if let Some(ref v) = body.caption {
+        a.caption = Set(Some(v.clone()));
+    }
+    if let Some(v) = body.sort_order {
+        a.sort_order = Set(Some(v));
+    }
     a.update(&state.db)
         .await
         .map_err(|e| AppError::Internal(format!("DB: {e}")))?;

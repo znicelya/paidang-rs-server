@@ -17,8 +17,7 @@ fn valid_date_format(s: &str) -> Result<(), ValidationError> {
 
 /// Validate HH:MM time format.
 fn valid_time_format(s: &str) -> Result<(), ValidationError> {
-    let re =
-        regex::Regex::new(r"^\d{2}:\d{2}$").map_err(|_| ValidationError::new("regex"))?;
+    let re = regex::Regex::new(r"^\d{2}:\d{2}$").map_err(|_| ValidationError::new("regex"))?;
     if re.is_match(s) {
         Ok(())
     } else {

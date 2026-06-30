@@ -107,10 +107,7 @@ pub async fn update(
     if let Some(v) = body.remark {
         a.remark = Set(Some(v));
     }
-    let r = a
-        .update(&state.db)
-        .await
-        .map_err(AppError::from_db)?;
+    let r = a.update(&state.db).await.map_err(AppError::from_db)?;
     Ok(r)
 }
 

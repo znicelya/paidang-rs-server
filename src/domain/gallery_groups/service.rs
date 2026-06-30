@@ -96,14 +96,29 @@ pub async fn update(
         .map_err(|e| AppError::Internal(format!("DB:{e}")))?
         .ok_or(AppError::NotFound("不存在".into()))?;
     let mut a: gallery_group::ActiveModel = rec.into();
-    if let Some(v) = body.name { a.name = Set(v); }
-    if let Some(v) = body.cover_image { a.cover_image = Set(Some(v)); }
-    if let Some(v) = body.description { a.description = Set(Some(v)); }
-    if let Some(v) = body.sort_order { a.sort_order = Set(Some(v)); }
-    if let Some(v) = body.is_visible { a.is_visible = Set(Some(v)); }
-    if let Some(v) = body.status { a.status = Set(Some(v)); }
+    if let Some(v) = body.name {
+        a.name = Set(v);
+    }
+    if let Some(v) = body.cover_image {
+        a.cover_image = Set(Some(v));
+    }
+    if let Some(v) = body.description {
+        a.description = Set(Some(v));
+    }
+    if let Some(v) = body.sort_order {
+        a.sort_order = Set(Some(v));
+    }
+    if let Some(v) = body.is_visible {
+        a.is_visible = Set(Some(v));
+    }
+    if let Some(v) = body.status {
+        a.status = Set(Some(v));
+    }
     a.update_by = Set(Some(user_id));
-    let r = a.update(&state.db).await.map_err(|e| AppError::Internal(format!("DB:{e}")))?;
+    let r = a
+        .update(&state.db)
+        .await
+        .map_err(|e| AppError::Internal(format!("DB:{e}")))?;
     Ok(r)
 }
 

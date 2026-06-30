@@ -1,9 +1,9 @@
 //! Logs handlers — dev-mode live log viewer.
 
+use axum::Json;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
-use axum::Json;
 
 use crate::app_state::AppState;
 use crate::error::AppError;

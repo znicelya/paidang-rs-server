@@ -1,7 +1,7 @@
 //! Logs router — dev-mode live log viewer.
 
-use utoipa_axum::routes;
 use utoipa_axum::router::OpenApiRouter;
+use utoipa_axum::routes;
 
 use crate::app_state::AppState;
 
