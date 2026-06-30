@@ -1,7 +1,7 @@
 //! Files service — COS upload/download/list/delete + Qiniu moderation.
 
 use crate::app_state::AppState;
-use crate::domain::files::dto::UploadPolicyRequest;
+use crate::domain::files::dto::{ModerateUploadRequest, UploadPolicyRequest};
 use crate::error::AppError;
 use crate::external::qiniu_moderation;
 
@@ -60,6 +60,59 @@ pub fn upload_policy(
     Ok(cos_client.post_upload_policy(&key, 10 * 60))
 }
 
+pub async fn moderate_uploaded_object(
+    state: &AppState,
+    req: ModerateUploadRequest,
+) -> Result<serde_json::Value, AppError> {
+    let cos_client = state
+        .cos_client
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("COS not configured".into()))?;
+    let clean_key = normalize_key(&req.key);
+    let content_type = req
+        .content_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| guess_content_type(&clean_key));
+
+    if !qiniu_moderation::QiniuModeration::should_moderate(&content_type) {
+        let url = cos_client.signed_get_url(&clean_key, 24 * 60 * 60);
+        return Ok(serde_json::json!({
+            "key": clean_key,
+            "path": format!("/files/{clean_key}"),
+            "url": url,
+        }));
+    }
+
+    let moderation = state
+        .moderation
+        .as_ref()
+        .cloned()
+        .unwrap_or_else(|| qiniu_moderation::QiniuModeration::new(None, None));
+    let url = cos_client.signed_get_url(&clean_key, 10 * 60);
+
+    if moderation.is_configured() {
+        let result = moderation.moderate_uri(&url).await?;
+        if let qiniu_moderation::ModerationResult::Block(reason) = result {
+            let _ = cos_client.delete_object(&clean_key).await;
+            return Ok(serde_json::json!({
+                "blocked": true,
+                "reason": reason,
+                "key": clean_key,
+                "path": format!("/files/{clean_key}"),
+            }));
+        }
+    }
+
+    Ok(serde_json::json!({
+        "key": clean_key,
+        "path": format!("/files/{clean_key}"),
+        "url": cos_client.signed_get_url(&clean_key, 24 * 60 * 60),
+    }))
+}
+
 /// Create a temporary signed COS URL. The client can load the image directly
 /// from COS without proxying bytes through this service.
 pub fn sign_url(state: &AppState, key: &str) -> Result<serde_json::Value, AppError> {
@@ -110,6 +163,24 @@ fn storage_file_name(user_id: i32, original_name: &str) -> String {
         .to_ascii_lowercase();
     let millis = chrono::Utc::now().timestamp_millis();
     format!("{user_id}_{millis}.{ext}")
+}
+
+fn guess_content_type(key: &str) -> String {
+    let lower = key.to_ascii_lowercase();
+    if lower.ends_with(".png") {
+        "image/png"
+    } else if lower.ends_with(".webp") {
+        "image/webp"
+    } else if lower.ends_with(".gif") {
+        "image/gif"
+    } else if lower.ends_with(".heic") {
+        "image/heic"
+    } else if lower.ends_with(".svg") || lower.ends_with(".svgz") {
+        "image/svg+xml"
+    } else {
+        "image/jpeg"
+    }
+    .to_string()
 }
 
 /// Proxy-download an object from COS. Returns `(body, content_type)`.

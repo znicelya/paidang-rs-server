@@ -53,6 +53,15 @@ impl QiniuModeration {
         base64_data: &str,
         _mime_type: &str,
     ) -> Result<ModerationResult, AppError> {
+        self.moderate_uri(&format!(
+            "data:application/octet-stream;base64,{}",
+            base64_data
+        ))
+        .await
+    }
+
+    /// Submit an image URL or data URI for moderation.
+    pub async fn moderate_uri(&self, uri: &str) -> Result<ModerationResult, AppError> {
         let (access_key, secret_key) = match (&self.access_key, &self.secret_key) {
             (Some(ak), Some(sk)) => (ak, sk),
             _ => return Ok(ModerationResult::Unknown),
@@ -61,7 +70,7 @@ impl QiniuModeration {
         let url = "https://ai.qiniuapi.com/v3/image/censor";
         let body = serde_json::json!({
             "data": {
-                "uri": format!("data:application/octet-stream;base64,{}", base64_data),
+                "uri": uri,
             },
             "params": {
                 "scenes": ["pulp", "terror", "politician"],

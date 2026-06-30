@@ -10,6 +10,12 @@ pub struct UploadPolicyRequest {
     pub content_type: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+pub struct ModerateUploadRequest {
+    pub key: String,
+    pub content_type: Option<String>,
+}
+
 #[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct ListQuery {
     pub prefix: Option<String>,

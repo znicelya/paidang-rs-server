@@ -11,7 +11,7 @@ use crate::error::AppError;
 use crate::middleware::auth::AuthUser;
 use crate::response::ApiResponse;
 
-use super::dto::{DeleteQuery, ListQuery, SignQuery, UploadPolicyRequest};
+use super::dto::{DeleteQuery, ListQuery, ModerateUploadRequest, SignQuery, UploadPolicyRequest};
 use super::service;
 
 /// POST /files - multipart upload to COS, with optional Qiniu moderation.
@@ -100,6 +100,27 @@ pub async fn upload_policy(
     Json(body): Json<UploadPolicyRequest>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
     let value = service::upload_policy(&state, auth.user_id, body)?;
+    Ok(Json(ApiResponse::ok(value)))
+}
+
+/// POST /files/moderate - moderate a direct-uploaded COS object.
+#[utoipa::path(
+    post,
+    path = "/files/moderate",
+    request_body = ModerateUploadRequest,
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "COS not configured"),
+    ),
+    tag = "files",
+)]
+pub async fn moderate_upload(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+    Json(body): Json<ModerateUploadRequest>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
+    let value = service::moderate_uploaded_object(&state, body).await?;
     Ok(Json(ApiResponse::ok(value)))
 }
 
