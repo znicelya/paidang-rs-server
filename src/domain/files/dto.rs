@@ -1,7 +1,14 @@
 //! Files DTOs.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+pub struct UploadPolicyRequest {
+    pub prefix: Option<String>,
+    pub file_name: String,
+    pub content_type: Option<String>,
+}
 
 #[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct ListQuery {

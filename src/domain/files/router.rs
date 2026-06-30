@@ -12,6 +12,7 @@ pub fn routes() -> OpenApiRouter<AppState> {
             super::handler::list,
             super::handler::delete_file
         ))
+        .routes(routes!(super::handler::upload_policy))
         .routes(routes!(super::handler::sign_url))
         .routes(routes!(super::handler::download))
 }

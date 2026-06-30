@@ -1,6 +1,7 @@
 //! Files service — COS upload/download/list/delete + Qiniu moderation.
 
 use crate::app_state::AppState;
+use crate::domain::files::dto::UploadPolicyRequest;
 use crate::error::AppError;
 use crate::external::qiniu_moderation;
 
@@ -44,6 +45,21 @@ pub async fn upload(
     Ok(serde_json::json!({ "key": key, "path": format!("/files/{key}"), "url": url }))
 }
 
+pub fn upload_policy(
+    state: &AppState,
+    user_id: i32,
+    req: UploadPolicyRequest,
+) -> Result<serde_json::Value, AppError> {
+    let cos_client = state
+        .cos_client
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("COS not configured".into()))?;
+    let prefix = normalize_prefix(req.prefix.as_deref().unwrap_or("files"));
+    let file_name = storage_file_name(user_id, &req.file_name);
+    let key = format!("{prefix}{file_name}");
+    Ok(cos_client.post_upload_policy(&key, 10 * 60))
+}
+
 /// Create a temporary signed COS URL. The client can load the image directly
 /// from COS without proxying bytes through this service.
 pub fn sign_url(state: &AppState, key: &str) -> Result<serde_json::Value, AppError> {
@@ -68,6 +84,32 @@ fn normalize_key(value: &str) -> String {
         key.truncate(pos);
     }
     key.trim_start_matches('/').to_string()
+}
+
+fn normalize_prefix(value: &str) -> String {
+    let clean = value.trim().trim_matches('/');
+    if clean.is_empty() {
+        "files/".to_string()
+    } else {
+        format!("{clean}/")
+    }
+}
+
+fn storage_file_name(user_id: i32, original_name: &str) -> String {
+    let base_name = original_name
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or("upload.jpg");
+    let ext = base_name
+        .rsplit_once('.')
+        .map(|(_, ext)| ext)
+        .filter(|ext| {
+            !ext.is_empty() && ext.len() <= 10 && ext.chars().all(|c| c.is_ascii_alphanumeric())
+        })
+        .unwrap_or("jpg")
+        .to_ascii_lowercase();
+    let millis = chrono::Utc::now().timestamp_millis();
+    format!("{user_id}_{millis}.{ext}")
 }
 
 /// Proxy-download an object from COS. Returns `(body, content_type)`.

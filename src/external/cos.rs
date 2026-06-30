@@ -64,6 +64,57 @@ impl CosClient {
         self.signed_get_url_at(key, now, ttl_secs)
     }
 
+    pub fn post_upload_policy(&self, key: &str, ttl_secs: i64) -> serde_json::Value {
+        let now = chrono::Utc::now().timestamp();
+        self.post_upload_policy_at(key, now, ttl_secs)
+    }
+
+    fn post_upload_policy_at(&self, key: &str, start: i64, ttl_secs: i64) -> serde_json::Value {
+        let end = start + ttl_secs.max(1);
+        let sign_time = format!("{start};{end}");
+        let key_time = sign_time.clone();
+        let expiration = chrono::DateTime::from_timestamp(end, 0)
+            .unwrap_or_else(chrono::Utc::now)
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let policy_json = serde_json::json!({
+            "expiration": expiration,
+            "conditions": [
+                { "q-sign-algorithm": "sha1" },
+                { "q-ak": self.config.secret_id },
+                { "q-sign-time": sign_time },
+                { "q-key-time": key_time },
+                { "key": key },
+                { "success_action_status": "200" },
+            ],
+        });
+        let policy_text = serde_json::to_string(&policy_json).expect("serialize COS policy");
+        let policy = {
+            use base64::Engine;
+            base64::engine::general_purpose::STANDARD.encode(policy_text.as_bytes())
+        };
+        let string_to_sign = sha1_hex(policy.as_bytes());
+        let sign_key = hmac_sha1_hex(self.config.secret_key.as_bytes(), &key_time);
+        let signature = hmac_sha1_hex(sign_key.as_bytes(), &string_to_sign);
+        let signed_url = self.signed_get_url_at(key, start, ttl_secs);
+
+        serde_json::json!({
+            "url": format!("https://{}/", self.host()),
+            "key": key,
+            "path": format!("/files/{key}"),
+            "signed_url": signed_url,
+            "form_data": {
+                "key": key,
+                "policy": policy,
+                "q-sign-algorithm": "sha1",
+                "q-ak": self.config.secret_id,
+                "q-key-time": key_time,
+                "q-sign-time": sign_time,
+                "q-signature": signature,
+                "success_action_status": "200",
+            },
+        })
+    }
+
     fn signed_get_url_at(&self, key: &str, start: i64, ttl_secs: i64) -> String {
         let end = start + ttl_secs.max(1);
         let sign_time = format!("{start};{end}");
@@ -385,5 +436,66 @@ mod tests {
         assert_eq!(signature.len(), 40);
         assert!(signature.chars().all(|c| c.is_ascii_hexdigit()));
         assert!(signature.chars().all(|c| !c.is_ascii_uppercase()));
+    }
+
+    #[test]
+    fn post_upload_policy_contains_cos_form_fields() {
+        let policy = client().post_upload_policy_at("gallery/a b.jpg", 100, 60);
+        let form = policy.get("form_data").unwrap();
+
+        assert_eq!(
+            policy.get("url").and_then(|v| v.as_str()).unwrap(),
+            "https://bucket-123.cos.ap-guangzhou.myqcloud.com/"
+        );
+        assert_eq!(
+            policy.get("key").and_then(|v| v.as_str()).unwrap(),
+            "gallery/a b.jpg"
+        );
+        assert_eq!(
+            policy.get("path").and_then(|v| v.as_str()).unwrap(),
+            "/files/gallery/a b.jpg"
+        );
+        assert_eq!(
+            form.get("key").and_then(|v| v.as_str()).unwrap(),
+            "gallery/a b.jpg"
+        );
+        assert_eq!(
+            form.get("q-sign-algorithm")
+                .and_then(|v| v.as_str())
+                .unwrap(),
+            "sha1"
+        );
+        assert_eq!(
+            form.get("q-ak").and_then(|v| v.as_str()).unwrap(),
+            "secret-id"
+        );
+        assert_eq!(
+            form.get("q-key-time").and_then(|v| v.as_str()).unwrap(),
+            "100;160"
+        );
+        assert_eq!(
+            form.get("q-sign-time").and_then(|v| v.as_str()).unwrap(),
+            "100;160"
+        );
+        assert_eq!(
+            form.get("success_action_status")
+                .and_then(|v| v.as_str())
+                .unwrap(),
+            "200"
+        );
+        let signature = form.get("q-signature").and_then(|v| v.as_str()).unwrap();
+        assert_eq!(signature.len(), 40);
+        assert!(signature.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(signature.chars().all(|c| !c.is_ascii_uppercase()));
+
+        let policy_text = String::from_utf8(
+            base64::Engine::decode(
+                &base64::engine::general_purpose::STANDARD,
+                form.get("policy").and_then(|v| v.as_str()).unwrap(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(!policy_text.contains("\"bucket\""));
     }
 }
