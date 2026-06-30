@@ -11,7 +11,7 @@ use crate::error::AppError;
 use crate::middleware::auth::AuthUser;
 use crate::response::ApiResponse;
 
-use super::dto::{DeleteQuery, ListQuery};
+use super::dto::{DeleteQuery, ListQuery, SignQuery};
 use super::service;
 
 /// POST /files - multipart upload to COS, with optional Qiniu moderation.
@@ -134,6 +134,25 @@ pub async fn list(
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
     let prefix = q.prefix.unwrap_or_else(|| "files/".to_string());
     let value = service::list(&state, &prefix).await?;
+    Ok(Json(ApiResponse::ok(value)))
+}
+
+/// GET /files/sign?key= - create a temporary signed COS URL.
+#[utoipa::path(
+    get,
+    path = "/files/sign",
+    params(SignQuery),
+    responses(
+        (status = 200, body = ApiResponse<serde_json::Value>),
+        (status = 500, description = "COS not configured"),
+    ),
+    tag = "files",
+)]
+pub async fn sign_url(
+    State(state): State<AppState>,
+    Query(q): Query<SignQuery>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
+    let value = service::sign_url(&state, &q.key)?;
     Ok(Json(ApiResponse::ok(value)))
 }
 

@@ -38,9 +38,36 @@ pub async fn upload(
     }
 
     let key = format!("{prefix}{file_name}");
-    let url = cos_client.put_object(&key, data, content_type).await?;
+    cos_client.put_object(&key, data, content_type).await?;
+    let url = cos_client.signed_get_url(&key, 24 * 60 * 60);
 
-    Ok(serde_json::json!({ "key": key, "url": url }))
+    Ok(serde_json::json!({ "key": key, "path": format!("/files/{key}"), "url": url }))
+}
+
+/// Create a temporary signed COS URL. The client can load the image directly
+/// from COS without proxying bytes through this service.
+pub fn sign_url(state: &AppState, key: &str) -> Result<serde_json::Value, AppError> {
+    let cos_client = state
+        .cos_client
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("COS not configured".into()))?;
+    let clean_key = normalize_key(key);
+    let url = cos_client.signed_get_url(&clean_key, 24 * 60 * 60);
+    Ok(serde_json::json!({ "key": clean_key, "url": url }))
+}
+
+fn normalize_key(value: &str) -> String {
+    let mut key = value.trim().to_string();
+    if let Some(pos) = key.find("/files/") {
+        key = key[(pos + "/files/".len())..].to_string();
+    }
+    if let Some(pos) = key.find('?') {
+        key.truncate(pos);
+    }
+    if let Some(pos) = key.find('#') {
+        key.truncate(pos);
+    }
+    key.trim_start_matches('/').to_string()
 }
 
 /// Proxy-download an object from COS. Returns `(body, content_type)`.

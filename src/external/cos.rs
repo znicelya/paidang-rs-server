@@ -59,6 +59,39 @@ impl CosClient {
         format!("https://{}{}", self.host(), self.resource_path(key))
     }
 
+    pub fn signed_get_url(&self, key: &str, ttl_secs: i64) -> String {
+        let now = chrono::Utc::now().timestamp();
+        self.signed_get_url_at(key, now, ttl_secs)
+    }
+
+    fn signed_get_url_at(&self, key: &str, start: i64, ttl_secs: i64) -> String {
+        let end = start + ttl_secs.max(1);
+        let sign_time = format!("{start};{end}");
+        let key_time = sign_time.clone();
+        let host = self.host();
+        let header_list = "host";
+        let url_param_list = "";
+        let http_string = format!(
+            "get\n{}\n\nhost={}\n",
+            self.resource_path(key),
+            percent_encode(&host),
+        );
+        let string_to_sign = format!("sha1\n{sign_time}\n{}\n", sha1_hex(http_string.as_bytes()));
+        let sign_key = hmac_sha1_hex(self.config.secret_key.as_bytes(), &key_time);
+        let signature = hmac_sha1_hex(sign_key.as_bytes(), &string_to_sign);
+
+        format!(
+            "{}?q-sign-algorithm=sha1&q-ak={}&q-sign-time={}&q-key-time={}&q-header-list={}&q-url-param-list={}&q-signature={}",
+            self.object_url(key),
+            percent_encode(&self.config.secret_id),
+            percent_encode(&sign_time),
+            percent_encode(&key_time),
+            header_list,
+            url_param_list,
+            signature,
+        )
+    }
+
     /// PUT an object. `content_type` should be inferred from the file.
     /// Returns the public URL on success.
     pub async fn put_object(
@@ -327,6 +360,28 @@ mod tests {
     fn cos_signature_is_lowercase_hex_hmac_sha1() {
         let signature = client().sign("test-signing-input");
 
+        assert_eq!(signature.len(), 40);
+        assert!(signature.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(signature.chars().all(|c| !c.is_ascii_uppercase()));
+    }
+
+    #[test]
+    fn signed_get_url_uses_cos_query_signature() {
+        let url = client().signed_get_url_at("gallery/a b.jpg", 100, 60);
+
+        assert!(
+            url.starts_with("https://bucket-123.cos.ap-guangzhou.myqcloud.com/gallery/a%20b.jpg?")
+        );
+        assert!(url.contains("q-sign-algorithm=sha1"));
+        assert!(url.contains("q-sign-time=100%3B160"));
+        assert!(url.contains("q-key-time=100%3B160"));
+        assert!(url.contains("q-header-list=host"));
+        assert!(url.contains("q-url-param-list="));
+
+        let signature = url
+            .rsplit_once("q-signature=")
+            .map(|(_, signature)| signature)
+            .unwrap();
         assert_eq!(signature.len(), 40);
         assert!(signature.chars().all(|c| c.is_ascii_hexdigit()));
         assert!(signature.chars().all(|c| !c.is_ascii_uppercase()));
