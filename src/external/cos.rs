@@ -92,7 +92,7 @@ impl CosClient {
             use base64::Engine;
             base64::engine::general_purpose::STANDARD.encode(policy_text.as_bytes())
         };
-        let string_to_sign = sha1_hex(policy.as_bytes());
+        let string_to_sign = sha1_hex(policy_text.as_bytes());
         let sign_key = hmac_sha1_hex(self.config.secret_key.as_bytes(), &key_time);
         let signature = hmac_sha1_hex(sign_key.as_bytes(), &string_to_sign);
         let signed_url = self.signed_get_url_at(key, start, ttl_secs);
