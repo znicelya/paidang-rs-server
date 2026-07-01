@@ -88,17 +88,22 @@ impl QiniuModeration {
             .body(body_str)
             .send()
             .await
-            .map_err(|e| AppError::External(format!("Qiniu moderation: {e}")))?;
+            .map_err(|_| ModerationResult::Unknown);
+
+        let resp = match resp {
+            Ok(resp) => resp,
+            Err(result) => return Ok(result),
+        };
 
         let status = resp.status();
         if !status.is_success() {
             return Ok(ModerationResult::Unknown);
         }
 
-        let result: serde_json::Value = resp
-            .json()
-            .await
-            .map_err(|e| AppError::External(format!("Qiniu parse: {e}")))?;
+        let result = match resp.json::<serde_json::Value>().await {
+            Ok(result) => result,
+            Err(_) => return Ok(ModerationResult::Unknown),
+        };
 
         // Check the result. `result.scenes` is an OBJECT keyed by scene name
         // (`pulp` / `terror` / `politician`), each carrying its own `suggestion`.

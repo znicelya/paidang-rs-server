@@ -53,6 +53,8 @@ pub async fn update_profile(
     user_id: i32,
     req: &UpdateProfileRequest,
 ) -> Result<ProfileData, AppError> {
+    validate_profile_assets(req)?;
+
     // -- user table: phone --
     if let Some(ref phone) = req.phone {
         let mut active: user::ActiveModel = user::Entity::find_by_id(user_id)
@@ -106,6 +108,23 @@ pub async fn update_profile(
     }
 
     get_profile(state, user_id).await
+}
+
+fn validate_profile_assets(req: &UpdateProfileRequest) -> Result<(), AppError> {
+    if let Some(ref value) = req.background_image {
+        let clean = value.trim();
+        if !clean.is_empty()
+            && !clean.starts_with("/files/")
+            && !clean.starts_with("files/")
+            && !clean.starts_with("background/")
+        {
+            return Err(AppError::InputValidation(
+                "背景图必须先上传并通过审核".into(),
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn set_profile_fields(model: &mut user_profile::ActiveModel, req: &UpdateProfileRequest) {

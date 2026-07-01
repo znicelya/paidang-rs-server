@@ -4,6 +4,9 @@ use crate::app_state::AppState;
 use crate::domain::files::dto::{ModerateUploadRequest, UploadPolicyRequest};
 use crate::error::AppError;
 use crate::external::qiniu_moderation;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static UPLOAD_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// Upload bytes to COS under `prefix/file_name`, with optional image moderation.
 /// Returns the JSON payload (`{ blocked?, key, url }`) to be wrapped in `ApiResponse`.
@@ -148,7 +151,7 @@ fn normalize_prefix(value: &str) -> String {
     }
 }
 
-fn storage_file_name(user_id: i32, original_name: &str) -> String {
+pub(crate) fn storage_file_name(user_id: i32, original_name: &str) -> String {
     let base_name = original_name
         .rsplit(['/', '\\'])
         .next()
@@ -161,8 +164,11 @@ fn storage_file_name(user_id: i32, original_name: &str) -> String {
         })
         .unwrap_or("jpg")
         .to_ascii_lowercase();
-    let millis = chrono::Utc::now().timestamp_millis();
-    format!("{user_id}_{millis}.{ext}")
+    let now = chrono::Utc::now();
+    let millis = now.timestamp_millis();
+    let nanos = now.timestamp_subsec_nanos();
+    let seq = UPLOAD_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    format!("{user_id}_{millis}_{nanos}_{seq}.{ext}")
 }
 
 fn guess_content_type(key: &str) -> String {

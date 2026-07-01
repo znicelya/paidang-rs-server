@@ -33,12 +33,13 @@ use super::service;
 )]
 pub async fn upload(
     State(state): State<AppState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     mut multipart: Multipart,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
     let mut file_data: Option<Vec<u8>> = None;
     let mut file_name = String::new();
     let mut content_type = String::new();
+    let mut content_type_override: Option<String> = None;
     let mut prefix = String::from("files/");
 
     while let Some(field) = multipart
@@ -69,6 +70,15 @@ pub async fn upload(
                     .map_err(|e| AppError::InputValidation(format!("prefix: {e}")))?;
                 prefix = p.trim_end_matches('/').to_string() + "/";
             }
+            "content_type" => {
+                let value = field
+                    .text()
+                    .await
+                    .map_err(|e| AppError::InputValidation(format!("content_type: {e}")))?;
+                if !value.trim().is_empty() {
+                    content_type_override = Some(value.trim().to_string());
+                }
+            }
             _ => {}
         }
     }
@@ -78,7 +88,12 @@ pub async fn upload(
         return Err(AppError::InputValidation("empty file".into()));
     }
 
-    let value = service::upload(&state, data, &file_name, &content_type, &prefix).await?;
+    if let Some(value) = content_type_override {
+        content_type = value;
+    }
+
+    let stored_file_name = service::storage_file_name(auth.user_id, &file_name);
+    let value = service::upload(&state, data, &stored_file_name, &content_type, &prefix).await?;
     Ok(Json(ApiResponse::ok(value)))
 }
 
