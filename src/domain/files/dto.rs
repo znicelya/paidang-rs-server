@@ -16,6 +16,15 @@ pub struct ModerateUploadRequest {
     pub content_type: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Serialize, ToSchema)]
+pub struct Base64UploadRequest {
+    pub file_name: Option<String>,
+    pub content_type: Option<String>,
+    pub prefix: Option<String>,
+    pub folder: Option<String>,
+    pub data_base64: String,
+}
+
 #[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
 pub struct ListQuery {
     pub prefix: Option<String>,

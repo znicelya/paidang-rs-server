@@ -47,17 +47,14 @@ impl QiniuModeration {
     }
 
     /// Submit a base64-encoded image for moderation.
-    /// `mime_type` e.g. `image/jpeg` — used as `application/octet-stream` prefix per existing fix.
+    /// `mime_type` e.g. `image/jpeg`.
     pub async fn moderate(
         &self,
         base64_data: &str,
-        _mime_type: &str,
+        mime_type: &str,
     ) -> Result<ModerationResult, AppError> {
-        self.moderate_uri(&format!(
-            "data:application/octet-stream;base64,{}",
-            base64_data
-        ))
-        .await
+        self.moderate_uri(&format!("data:{};base64,{}", mime_type.trim(), base64_data,))
+            .await
     }
 
     /// Submit an image URL or data URI for moderation.

@@ -4,6 +4,7 @@ use crate::app_state::AppState;
 use crate::domain::files::dto::{ModerateUploadRequest, UploadPolicyRequest};
 use crate::error::AppError;
 use crate::external::qiniu_moderation;
+use base64::Engine;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static UPLOAD_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -82,6 +83,17 @@ pub async fn moderate_uploaded_object(
     Err(AppError::InputValidation(
         "上传后审核接口已禁用，请通过 /files 上传并完成审核".into(),
     ))
+}
+
+pub fn decode_base64_upload(value: &str) -> Result<Vec<u8>, AppError> {
+    let data = value
+        .split_once(',')
+        .map(|(_, body)| body)
+        .unwrap_or(value)
+        .trim();
+    base64::engine::general_purpose::STANDARD
+        .decode(data)
+        .map_err(|_| AppError::InputValidation("invalid base64 file".into()))
 }
 
 /// Create a temporary signed COS URL. The client can load the image directly

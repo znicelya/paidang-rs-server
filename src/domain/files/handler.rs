@@ -2,7 +2,7 @@
 
 use axum::Json;
 use axum::body::Body;
-use axum::extract::{Multipart, Path, Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{StatusCode, header};
 use axum::response::IntoResponse;
 
@@ -11,21 +11,20 @@ use crate::error::AppError;
 use crate::middleware::auth::AuthUser;
 use crate::response::ApiResponse;
 
-use super::dto::{DeleteQuery, ListQuery, ModerateUploadRequest, SignQuery, UploadPolicyRequest};
+use super::dto::{
+    Base64UploadRequest, DeleteQuery, ListQuery, ModerateUploadRequest, SignQuery,
+    UploadPolicyRequest,
+};
 use super::service;
 
-/// POST /files - multipart upload to COS after moderation.
-///
-/// Fields:
-/// - `file` (required): the binary file
-/// - `prefix` (optional): storage path prefix, e.g. "gallery/" or "avatars/"
+/// POST /files - JSON upload to COS after moderation.
 #[utoipa::path(
     post,
     path = "/files",
-    request_body(content_type = "multipart/form-data", description = "Multipart form with file field"),
+    request_body = Base64UploadRequest,
     responses(
         (status = 200, body = ApiResponse<serde_json::Value>),
-        (status = 400, description = "No file provided"),
+        (status = 400, description = "Invalid upload payload"),
         (status = 401, description = "Unauthorized"),
         (status = 500, description = "COS not configured"),
     ),
@@ -34,66 +33,46 @@ use super::service;
 pub async fn upload(
     State(state): State<AppState>,
     auth: AuthUser,
-    mut multipart: Multipart,
+    Json(body): Json<Base64UploadRequest>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
-    let mut file_data: Option<Vec<u8>> = None;
-    let mut file_name = String::new();
-    let mut content_type = String::new();
-    let mut content_type_override: Option<String> = None;
-    let mut prefix = String::from("files/");
-
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|e| AppError::InputValidation(format!("multipart: {e}")))?
-    {
-        let name = field.name().unwrap_or("").to_string();
-        match name.as_str() {
-            "file" => {
-                file_name = field.file_name().unwrap_or("unnamed").to_string();
-                content_type = field
-                    .content_type()
-                    .unwrap_or("application/octet-stream")
-                    .to_string();
-                file_data = Some(
-                    field
-                        .bytes()
-                        .await
-                        .map_err(|e| AppError::InputValidation(format!("read: {e}")))?
-                        .to_vec(),
-                );
-            }
-            "prefix" => {
-                let p = field
-                    .text()
-                    .await
-                    .map_err(|e| AppError::InputValidation(format!("prefix: {e}")))?;
-                prefix = p.trim_end_matches('/').to_string() + "/";
-            }
-            "content_type" => {
-                let value = field
-                    .text()
-                    .await
-                    .map_err(|e| AppError::InputValidation(format!("content_type: {e}")))?;
-                if !value.trim().is_empty() {
-                    content_type_override = Some(value.trim().to_string());
-                }
-            }
-            _ => {}
-        }
-    }
-
-    let data = file_data.ok_or_else(|| AppError::InputValidation("missing file".into()))?;
+    let data = service::decode_base64_upload(&body.data_base64)?;
     if data.is_empty() {
         return Err(AppError::InputValidation("empty file".into()));
     }
 
-    if let Some(value) = content_type_override {
-        content_type = value;
+    let original_name = body.file_name.as_deref().unwrap_or("upload.jpg");
+    let content_type = body
+        .content_type
+        .as_deref()
+        .unwrap_or("application/octet-stream");
+    let prefix = body
+        .prefix
+        .as_deref()
+        .or(body.folder.as_deref())
+        .unwrap_or("files");
+    let normalized_prefix = format!("{}/", prefix.trim().trim_matches('/'));
+    let stored_file_name = service::storage_file_name(auth.user_id, original_name);
+    let mut value = service::upload(
+        &state,
+        data,
+        &stored_file_name,
+        content_type,
+        &normalized_prefix,
+    )
+    .await?;
+
+    if normalized_prefix == "avatars/" {
+        if let Some(path) = value
+            .get("path")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+        {
+            if let Some(obj) = value.as_object_mut() {
+                obj.insert("avatar_url".into(), serde_json::Value::String(path));
+            }
+        }
     }
 
-    let stored_file_name = service::storage_file_name(auth.user_id, &file_name);
-    let value = service::upload(&state, data, &stored_file_name, &content_type, &prefix).await?;
     Ok(Json(ApiResponse::ok(value)))
 }
 
