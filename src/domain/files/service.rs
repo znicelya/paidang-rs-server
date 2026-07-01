@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static UPLOAD_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-/// Upload bytes to COS under `prefix/file_name`, with optional image moderation.
+/// Upload bytes to COS under `prefix/file_name`, after image moderation.
 /// Returns the JSON payload (`{ blocked?, key, url }`) to be wrapped in `ApiResponse`.
 pub async fn upload(
     state: &AppState,
@@ -26,23 +26,38 @@ pub async fn upload(
         .as_ref()
         .cloned()
         .unwrap_or_else(|| qiniu_moderation::QiniuModeration::new(None, None));
+    let effective_content_type = normalize_upload_content_type(content_type, file_name);
 
-    // Moderation (images only)
-    if qiniu_moderation::QiniuModeration::should_moderate(content_type)
-        && moderation.is_configured()
-    {
-        let b64 = {
-            use base64::Engine;
-            base64::engine::general_purpose::STANDARD.encode(&data)
-        };
-        let result = moderation.moderate(&b64, content_type).await?;
-        if let qiniu_moderation::ModerationResult::Block(reason) = result {
+    if !qiniu_moderation::QiniuModeration::should_moderate(&effective_content_type) {
+        return Err(AppError::InputValidation(
+            "仅支持可审核的图片格式上传".into(),
+        ));
+    }
+
+    // Images must be explicitly approved before they are written to COS.
+    if !moderation.is_configured() {
+        return Err(AppError::External("图片审核服务未配置，禁止上传".into()));
+    }
+
+    let b64 = {
+        use base64::Engine;
+        base64::engine::general_purpose::STANDARD.encode(&data)
+    };
+    let result = moderation.moderate(&b64, &effective_content_type).await?;
+    match result {
+        qiniu_moderation::ModerationResult::Pass => {}
+        qiniu_moderation::ModerationResult::Block(reason) => {
             return Ok(serde_json::json!({ "blocked": true, "reason": reason }));
+        }
+        qiniu_moderation::ModerationResult::Unknown => {
+            return Err(AppError::External("图片审核失败，禁止上传".into()));
         }
     }
 
     let key = format!("{prefix}{file_name}");
-    cos_client.put_object(&key, data, content_type).await?;
+    cos_client
+        .put_object(&key, data, &effective_content_type)
+        .await?;
     let url = cos_client.signed_get_url(&key, 24 * 60 * 60);
 
     Ok(serde_json::json!({ "key": key, "path": format!("/files/{key}"), "url": url }))
@@ -53,67 +68,20 @@ pub fn upload_policy(
     user_id: i32,
     req: UploadPolicyRequest,
 ) -> Result<serde_json::Value, AppError> {
-    let cos_client = state
-        .cos_client
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("COS not configured".into()))?;
-    let prefix = normalize_prefix(req.prefix.as_deref().unwrap_or("files"));
-    let file_name = storage_file_name(user_id, &req.file_name);
-    let key = format!("{prefix}{file_name}");
-    Ok(cos_client.post_upload_policy(&key, 10 * 60))
+    let _ = (state, user_id, req);
+    Err(AppError::InputValidation(
+        "直传 COS 已禁用，请通过 /files 上传并完成审核".into(),
+    ))
 }
 
 pub async fn moderate_uploaded_object(
     state: &AppState,
     req: ModerateUploadRequest,
 ) -> Result<serde_json::Value, AppError> {
-    let cos_client = state
-        .cos_client
-        .as_ref()
-        .ok_or_else(|| AppError::Internal("COS not configured".into()))?;
-    let clean_key = normalize_key(&req.key);
-    let content_type = req
-        .content_type
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-        .unwrap_or_else(|| guess_content_type(&clean_key));
-
-    if !qiniu_moderation::QiniuModeration::should_moderate(&content_type) {
-        let url = cos_client.signed_get_url(&clean_key, 24 * 60 * 60);
-        return Ok(serde_json::json!({
-            "key": clean_key,
-            "path": format!("/files/{clean_key}"),
-            "url": url,
-        }));
-    }
-
-    let moderation = state
-        .moderation
-        .as_ref()
-        .cloned()
-        .unwrap_or_else(|| qiniu_moderation::QiniuModeration::new(None, None));
-    let url = cos_client.signed_get_url(&clean_key, 10 * 60);
-
-    if moderation.is_configured() {
-        let result = moderation.moderate_uri(&url).await?;
-        if let qiniu_moderation::ModerationResult::Block(reason) = result {
-            let _ = cos_client.delete_object(&clean_key).await;
-            return Ok(serde_json::json!({
-                "blocked": true,
-                "reason": reason,
-                "key": clean_key,
-                "path": format!("/files/{clean_key}"),
-            }));
-        }
-    }
-
-    Ok(serde_json::json!({
-        "key": clean_key,
-        "path": format!("/files/{clean_key}"),
-        "url": cos_client.signed_get_url(&clean_key, 24 * 60 * 60),
-    }))
+    let _ = (state, req);
+    Err(AppError::InputValidation(
+        "上传后审核接口已禁用，请通过 /files 上传并完成审核".into(),
+    ))
 }
 
 /// Create a temporary signed COS URL. The client can load the image directly
@@ -149,6 +117,14 @@ fn normalize_prefix(value: &str) -> String {
     } else {
         format!("{clean}/")
     }
+}
+
+fn normalize_upload_content_type(content_type: &str, file_name: &str) -> String {
+    let clean = content_type.trim();
+    if clean.is_empty() || clean.eq_ignore_ascii_case("application/octet-stream") {
+        return guess_content_type(file_name);
+    }
+    clean.to_ascii_lowercase()
 }
 
 pub(crate) fn storage_file_name(user_id: i32, original_name: &str) -> String {

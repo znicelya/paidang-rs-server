@@ -3,7 +3,7 @@
 //! Ports `qiniuAuth.ts` + `moderation.ts` logic.
 //! Calls POST `https://ai.qiniuapi.com/v3/image/censor` with HMAC-SHA1 auth.
 //!
-//! Missing Qiniu credentials → moderation returns `unknown` (graceful degradation per spec §7.2).
+//! Missing Qiniu credentials → moderation returns `unknown`; upload callers must reject unknown results.
 
 use crate::error::AppError;
 use reqwest::Client;

@@ -14,7 +14,7 @@ use crate::response::ApiResponse;
 use super::dto::{DeleteQuery, ListQuery, ModerateUploadRequest, SignQuery, UploadPolicyRequest};
 use super::service;
 
-/// POST /files - multipart upload to COS, with optional Qiniu moderation.
+/// POST /files - multipart upload to COS after moderation.
 ///
 /// Fields:
 /// - `file` (required): the binary file
@@ -97,7 +97,7 @@ pub async fn upload(
     Ok(Json(ApiResponse::ok(value)))
 }
 
-/// POST /files/upload-policy - create signed POST form fields for direct COS upload.
+/// POST /files/upload-policy - disabled. Direct COS upload cannot satisfy pre-upload moderation.
 #[utoipa::path(
     post,
     path = "/files/upload-policy",
@@ -110,15 +110,16 @@ pub async fn upload(
     tag = "files",
 )]
 pub async fn upload_policy(
-    State(state): State<AppState>,
-    auth: AuthUser,
-    Json(body): Json<UploadPolicyRequest>,
+    State(_state): State<AppState>,
+    _auth: AuthUser,
+    Json(_body): Json<UploadPolicyRequest>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
-    let value = service::upload_policy(&state, auth.user_id, body)?;
-    Ok(Json(ApiResponse::ok(value)))
+    Err(AppError::InputValidation(
+        "直传 COS 已禁用，请通过 /files 上传并完成审核".into(),
+    ))
 }
 
-/// POST /files/moderate - moderate a direct-uploaded COS object.
+/// POST /files/moderate - disabled. Files must be moderated before COS upload.
 #[utoipa::path(
     post,
     path = "/files/moderate",
@@ -131,12 +132,13 @@ pub async fn upload_policy(
     tag = "files",
 )]
 pub async fn moderate_upload(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     _auth: AuthUser,
-    Json(body): Json<ModerateUploadRequest>,
+    Json(_body): Json<ModerateUploadRequest>,
 ) -> Result<Json<ApiResponse<serde_json::Value>>, AppError> {
-    let value = service::moderate_uploaded_object(&state, body).await?;
-    Ok(Json(ApiResponse::ok(value)))
+    Err(AppError::InputValidation(
+        "上传后审核接口已禁用，请通过 /files 上传并完成审核".into(),
+    ))
 }
 
 /// GET /files/*path - proxy download from COS.
