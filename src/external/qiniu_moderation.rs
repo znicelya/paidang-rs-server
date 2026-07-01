@@ -7,6 +7,7 @@
 
 use crate::error::AppError;
 use reqwest::Client;
+use tracing::warn;
 
 /// Result of a single moderation scan.
 #[derive(Debug, Clone)]
@@ -47,21 +48,27 @@ impl QiniuModeration {
     }
 
     /// Submit a base64-encoded image for moderation.
-    /// `mime_type` e.g. `image/jpeg`.
+    /// Qiniu requires data URI payloads to use the application/octet-stream prefix.
     pub async fn moderate(
         &self,
         base64_data: &str,
-        mime_type: &str,
+        _mime_type: &str,
     ) -> Result<ModerationResult, AppError> {
-        self.moderate_uri(&format!("data:{};base64,{}", mime_type.trim(), base64_data,))
-            .await
+        self.moderate_uri(&format!(
+            "data:application/octet-stream;base64,{}",
+            base64_data
+        ))
+        .await
     }
 
     /// Submit an image URL or data URI for moderation.
     pub async fn moderate_uri(&self, uri: &str) -> Result<ModerationResult, AppError> {
         let (access_key, secret_key) = match (&self.access_key, &self.secret_key) {
             (Some(ak), Some(sk)) => (ak, sk),
-            _ => return Ok(ModerationResult::Unknown),
+            _ => {
+                warn!("qiniu moderation unknown: credentials are not configured");
+                return Ok(ModerationResult::Unknown);
+            }
         };
 
         let url = "https://ai.qiniuapi.com/v3/image/censor";
@@ -85,7 +92,10 @@ impl QiniuModeration {
             .body(body_str)
             .send()
             .await
-            .map_err(|_| ModerationResult::Unknown);
+            .map_err(|err| {
+                warn!(error = %err, "qiniu moderation unknown: request failed");
+                ModerationResult::Unknown
+            });
 
         let resp = match resp {
             Ok(resp) => resp,
@@ -94,12 +104,26 @@ impl QiniuModeration {
 
         let status = resp.status();
         if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            warn!(
+                status = %status,
+                body = %truncate_log(&body, 500),
+                "qiniu moderation unknown: non-success response"
+            );
             return Ok(ModerationResult::Unknown);
         }
 
-        let result = match resp.json::<serde_json::Value>().await {
+        let text = resp.text().await.unwrap_or_default();
+        let result = match serde_json::from_str::<serde_json::Value>(&text) {
             Ok(result) => result,
-            Err(_) => return Ok(ModerationResult::Unknown),
+            Err(err) => {
+                warn!(
+                    error = %err,
+                    body = %truncate_log(&text, 500),
+                    "qiniu moderation unknown: invalid json response"
+                );
+                return Ok(ModerationResult::Unknown);
+            }
         };
 
         // Check the result. `result.scenes` is an OBJECT keyed by scene name
@@ -126,9 +150,21 @@ impl QiniuModeration {
                     .unwrap_or_else(|| "unknown".to_string());
                 return Ok(ModerationResult::Block(reason));
             }
-            return Ok(ModerationResult::Pass);
+            if suggestion == "pass" {
+                return Ok(ModerationResult::Pass);
+            }
+            warn!(
+                suggestion = %suggestion,
+                body = %truncate_log(&text, 500),
+                "qiniu moderation unknown: review suggestion"
+            );
+            return Ok(ModerationResult::Unknown);
         }
 
+        warn!(
+            body = %truncate_log(&text, 500),
+            "qiniu moderation unknown: missing result suggestion"
+        );
         Ok(ModerationResult::Unknown)
     }
 
@@ -143,18 +179,83 @@ impl QiniuModeration {
         use hmac::{Hmac, Mac};
         use sha1::Sha1;
 
-        let path = url.trim_start_matches("https://ai.qiniuapi.com");
-        let host = "ai.qiniuapi.com";
         let content_type = "application/json";
-
-        let signing_str =
-            format!("POST {path}\nHost: {host}\nContent-Type: {content_type}\n\n{body}");
+        let signing_str = qiniu_signing_data("POST", url, content_type, body);
 
         type HmacSha1 = Hmac<Sha1>;
         let mut mac = HmacSha1::new_from_slice(secret_key.as_bytes()).expect("HMAC-SHA1 key");
         mac.update(signing_str.as_bytes());
-        let sig = base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
+        let sig = base64::engine::general_purpose::URL_SAFE.encode(mac.finalize().into_bytes());
 
         format!("{access_key}:{sig}")
+    }
+}
+
+fn qiniu_signing_path(url: &str) -> String {
+    let without_scheme = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url);
+    let path_start = without_scheme.find('/').unwrap_or(0);
+    without_scheme[path_start..].to_string()
+}
+
+fn qiniu_signing_host(url: &str) -> String {
+    let without_scheme = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url);
+    let host_end = without_scheme.find('/').unwrap_or(without_scheme.len());
+    without_scheme[..host_end].to_string()
+}
+
+fn qiniu_signing_data(method: &str, url: &str, content_type: &str, body: &str) -> String {
+    let mut data = format!(
+        "{} {}\nHost: {}",
+        method,
+        qiniu_signing_path(url),
+        qiniu_signing_host(url)
+    );
+
+    if !content_type.is_empty() {
+        data.push_str(&format!("\nContent-Type: {content_type}"));
+    }
+
+    data.push_str("\n\n");
+
+    if !body.is_empty() && !content_type.is_empty() && content_type != "application/octet-stream" {
+        data.push_str(body);
+    }
+
+    data
+}
+
+fn truncate_log(value: &str, max_len: usize) -> String {
+    let mut chars = value.chars();
+    let truncated = chars.by_ref().take(max_len).collect::<String>();
+    if chars.next().is_none() {
+        value.to_string()
+    } else {
+        format!("{truncated}...")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::qiniu_signing_data;
+
+    #[test]
+    fn qiniu_signing_data_matches_documented_format() {
+        let data = qiniu_signing_data(
+            "POST",
+            "https://ai.qiniuapi.com/v3/image/censor",
+            "application/json",
+            r#"{"data":{"uri":"x"}}"#,
+        );
+
+        assert_eq!(
+            data,
+            "POST /v3/image/censor\nHost: ai.qiniuapi.com\nContent-Type: application/json\n\n{\"data\":{\"uri\":\"x\"}}"
+        );
     }
 }
